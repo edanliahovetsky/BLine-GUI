@@ -39,7 +39,7 @@ qml_files =
 excluded_qml_plugins = 
 
 # qt modules used. comma separated
-modules = Core,Gui,Widgets,DBus
+modules = DBus,Widgets,Gui,Core
 
 # qt plugins used by the application. only relevant for desktop deployment
 # for qt plugins used in android application see [android][plugins]

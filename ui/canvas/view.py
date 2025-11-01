@@ -574,7 +574,7 @@ class CanvasView(QGraphicsView):
 
     def _on_slider_changed(self, value:int):
         try:
-            self._sim_current_time_s=float(value)/1000.0; self._seek_to_time(self._sim_current_time_s); self._update_sim_robot_visibility()
+            self._sim_current_time_s=float(value)/10000.0; self._seek_to_time(self._sim_current_time_s); self._update_sim_robot_visibility()
         except Exception: pass
 
     def _on_slider_pressed(self):
@@ -610,7 +610,7 @@ class CanvasView(QGraphicsView):
                 self._sim_current_time_s = self._sim_total_time_s; self._sim_timer.stop();
                 if self.transport.btn: self.transport.btn.setText('▶')
             if self.transport.slider:
-                self.transport.slider.blockSignals(True); self.transport.slider.setValue(int(round(self._sim_current_time_s*1000.0))); self.transport.slider.blockSignals(False)
+                self.transport.slider.blockSignals(True); self.transport.slider.setValue(int(round(self._sim_current_time_s*10000.0))); self.transport.slider.blockSignals(False)
             self._seek_to_time(self._sim_current_time_s)
         except Exception: pass
 
@@ -633,12 +633,12 @@ class CanvasView(QGraphicsView):
             try:
                 if hasattr(self,'_project_manager') and self._project_manager: cfg=dict(self._project_manager.config or {})
             except Exception: cfg={}
-            result=simulate_path(self._path, cfg); self._sim_result=result
+            result=simulate_path(self._path, cfg, dt_s=0.001); self._sim_result=result
             self._sim_poses_by_time=result.poses_by_time; self._sim_times_sorted=result.times_sorted
             self._sim_total_time_s=float(result.total_time_s); self._sim_current_time_s=0.0
             if self.transport.slider:
                 self.transport.slider.blockSignals(True)
-                self.transport.slider.setRange(0,int(round(self._sim_total_time_s*1000.0)))
+                self.transport.slider.setRange(0,int(round(self._sim_total_time_s*10000.0)))
                 self.transport.slider.setValue(0)
                 self.transport.slider.blockSignals(False)
             if self.transport.label:

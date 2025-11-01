@@ -18,8 +18,14 @@ from .config_dialog import ConfigDialog
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()  # Call parent init
-        self.setWindowTitle("FRC Path Editor")
+        self.setWindowTitle("")
         self.resize(1000, 600)
+        
+        # Enable unified title and toolbar on macOS for centered title
+        try:
+            self.setUnifiedTitleAndToolBarOnMac(True)
+        except Exception:
+            pass
         self.project_manager = ProjectManager()
         self.path = Path()  # start empty; will be replaced on project load
         
@@ -1205,19 +1211,33 @@ class MainWindow(QMainWindow):
                 if path_name.endswith('.json'):
                     path_name = path_name[:-5]  # Remove .json extension for display
                 self.action_current_path.setText(f"Current: {path_name}")
-                
+
+                # Determine display name: use FRC repo root name if it's an FRC structure
+                last_selected_dir = self.project_manager.settings.value(self.project_manager.KEY_LAST_PROJECT_DIR, type=str)
+                display_name = os.path.basename(self.project_manager.project_dir)
+
+                if last_selected_dir and self.project_manager._is_frc_repo_root(last_selected_dir):
+                    # This is an FRC repo - show the repo root name
+                    display_name = os.path.basename(last_selected_dir)
+
                 # Update window title to show current project and path
-                project_name = os.path.basename(self.project_manager.project_dir)
-                self.setWindowTitle(f"FRC Path Planning - {project_name} - {path_name}")
-                
+                self.setWindowTitle(f"{display_name} - {path_name}")
+
                 # Update status bar
                 if hasattr(self, 'statusBar'):
-                    self.statusBar.showMessage(f"Current Path: {path_name} | Project: {project_name}")
+                    self.statusBar.showMessage(f"Current Path: {path_name} | Project: {display_name}")
             else:
                 # No project or no current path
                 self.action_current_path.setText("Current: (No Path)")
-                self.setWindowTitle("FRC Path Planning")
-                
+
+                # Check if we have a stored project directory that might be an FRC repo
+                last_selected_dir = self.project_manager.settings.value(self.project_manager.KEY_LAST_PROJECT_DIR, type=str)
+                if last_selected_dir and self.project_manager._is_frc_repo_root(last_selected_dir):
+                    repo_name = os.path.basename(last_selected_dir)
+                    self.setWindowTitle(repo_name)
+                else:
+                    self.setWindowTitle("")
+
                 # Update status bar
                 if hasattr(self, 'statusBar'):
                     self.statusBar.showMessage("No path loaded")

@@ -39,7 +39,7 @@ class TransportControls:
         except Exception:
             pass
         container_layout = QHBoxLayout(container)
-        container_layout.setContentsMargins(8,6,8,6)
+        container_layout.setContentsMargins(8,6,0,6)
         container_layout.setSpacing(8)
         try:
             container.setStyleSheet(
@@ -64,8 +64,9 @@ class TransportControls:
 
         slider = QSlider(Qt.Horizontal)
         slider.setRange(0,0)
-        slider.setSingleStep(1)  # Fine control: 1ms steps
-        slider.setPageStep(10)  # Fine page control: 10ms steps
+        slider.setMinimumWidth(80)  # 25% of previous size (300px)
+        slider.setSingleStep(1)  # Fine control: 0.1ms steps (10x more fine-grained)
+        slider.setPageStep(100)  # Fine page control: 10ms steps
         # Style slider to be cleaner and closer to sidebar range visuals
         try:
             slider.setStyleSheet(

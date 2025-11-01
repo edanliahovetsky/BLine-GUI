@@ -59,13 +59,35 @@ class ProjectManager:
         self.current_path_file: Optional[str] = None  # filename like "example.json"
 
     # --------------- Project directory ---------------
+    def _is_frc_repo_root(self, directory: str) -> bool:
+        """Check if the directory appears to be an FRC repository root (contains src/main/deploy/)."""
+        deploy_path = os.path.join(directory, "src", "main", "deploy")
+        return os.path.isdir(deploy_path)
+
+    def _get_effective_project_dir(self, selected_dir: str) -> str:
+        """Get the effective project directory, handling FRC repo structure automatically."""
+        selected_dir = os.path.abspath(selected_dir)
+
+        # If this is already an autos directory, use it directly
+        if os.path.basename(selected_dir) == "autos":
+            return selected_dir
+
+        # Check if selected directory is an FRC repo root
+        if self._is_frc_repo_root(selected_dir):
+            autos_dir = os.path.join(selected_dir, "src", "main", "deploy", "autos")
+            return autos_dir
+
+        # For non-FRC directories, use as-is
+        return selected_dir
+
     def set_project_dir(self, directory: str) -> None:
         directory = os.path.abspath(directory)
-        self.project_dir = directory
-        self.settings.setValue(self.KEY_LAST_PROJECT_DIR, directory)
+        effective_dir = self._get_effective_project_dir(directory)
+        self.project_dir = effective_dir
+        self.settings.setValue(self.KEY_LAST_PROJECT_DIR, directory)  # Store original selected dir for UI
         self.ensure_project_structure()
         # Track recents only after ensuring structure exists
-        self._add_recent_project(directory)
+        self._add_recent_project(effective_dir)
         self.load_config()
 
     def get_paths_dir(self) -> Optional[str]:
@@ -101,10 +123,15 @@ class ProjectManager:
         last_dir = self.settings.value(self.KEY_LAST_PROJECT_DIR, type=str)
         if not last_dir:
             return False
+
+        # Get the effective project directory (handles FRC repo redirection)
+        effective_dir = self._get_effective_project_dir(last_dir)
+
         # Validate without creating any files. Only accept if already valid.
-        cfg = os.path.join(last_dir, "config.json")
-        paths = os.path.join(last_dir, "paths")
-        if os.path.isdir(last_dir) and os.path.isfile(cfg) and os.path.isdir(paths):
+        cfg = os.path.join(effective_dir, "config.json")
+        paths = os.path.join(effective_dir, "paths")
+        if os.path.isdir(effective_dir) and os.path.isfile(cfg) and os.path.isdir(paths):
+            # Use the original last_dir to maintain the same behavior for set_project_dir
             self.set_project_dir(last_dir)
             return True
         return False
@@ -124,12 +151,17 @@ class ProjectManager:
                     items = []
             except Exception:
                 items = []
-        # Filter only existing dirs
-        items = [p for p in items if isinstance(p, str) and os.path.isdir(p)]
+        # Filter only existing dirs, and resolve FRC repo paths to their effective directories
+        filtered_items = []
+        for p in items:
+            if isinstance(p, str) and os.path.isdir(p):
+                effective_dir = self._get_effective_project_dir(p)
+                if os.path.isdir(effective_dir):
+                    filtered_items.append(effective_dir)
         # unique while preserving order
         seen = set()
         uniq = []
-        for p in items:
+        for p in filtered_items:
             if p not in seen:
                 seen.add(p)
                 uniq.append(p)
