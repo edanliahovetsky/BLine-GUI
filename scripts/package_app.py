@@ -43,7 +43,9 @@ def main() -> int:
     cmd = [executable, *cli_args]
     print(f"[package] Running: {' '.join(cmd)}")
     try:
-        subprocess.run(cmd, check=True, cwd=repo_root)
+        # Provide input="y\n" to automatically answer "Proceed? [Y/n]" prompts
+        # which occur when not running in a virtual environment.
+        subprocess.run(cmd, check=True, cwd=repo_root, input="y\n", text=True)
     except FileNotFoundError:
         print(f"[package] {executable!r} not found on PATH", file=sys.stderr)
         return 1
