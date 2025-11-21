@@ -13,7 +13,7 @@ input_file = main.py
 exec_directory = build
 
 # path to the project file relative to project_dir
-project_file = pyproject.toml 
+project_file = 
 
 # application icon
 icon = assets/rebel_logo.png
