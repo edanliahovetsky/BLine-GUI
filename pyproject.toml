@@ -52,3 +52,5 @@ files = ["models", "utils", "scripts", "tests"]
 addopts = "-ra"
 testpaths = ["tests"]
 
+[tool.pyside6-project]
+# Configuration is provided via pysidedeploy.spec
