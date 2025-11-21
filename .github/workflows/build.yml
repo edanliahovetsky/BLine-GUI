@@ -38,6 +38,16 @@ jobs:
       - name: Build application bundle
         run: python scripts/package_app.py
 
+      - name: Debug - List directories (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "Listing root directory:"
+          dir
+          echo "Listing build directory:"
+          if (Test-Path build) { dir build }
+          echo "Listing recursive:"
+          Get-ChildItem -Recurse -Filter *.exe
+
       - name: Sign Mac App (Ad-Hoc)
         if: runner.os == 'macOS'
         run: |
