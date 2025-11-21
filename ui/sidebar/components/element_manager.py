@@ -269,9 +269,7 @@ class ElementManager(QObject):
             else (
                 ElementType.ROTATION
                 if isinstance(prev, RotationTarget)
-                else ElementType.WAYPOINT
-                if isinstance(prev, Waypoint)
-                else None
+                else ElementType.WAYPOINT if isinstance(prev, Waypoint) else None
             )
         )
 

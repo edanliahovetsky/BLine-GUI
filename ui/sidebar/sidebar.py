@@ -918,9 +918,7 @@ class Sidebar(QWidget):
         tname = (
             "Waypoint"
             if isinstance(el, Waypoint)
-            else "Rotation"
-            if isinstance(el, RotationTarget)
-            else "Translation"
+            else "Rotation" if isinstance(el, RotationTarget) else "Translation"
         )
 
         # Announce about-to-change for undo snapshot
