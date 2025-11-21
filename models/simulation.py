@@ -555,7 +555,10 @@ def simulate_path(
                     l = int(getattr(rc, "start_ordinal", 1))
                     h = int(getattr(rc, "end_ordinal", 1))
                     if int(l) <= int(next_anchor_ord) <= int(h):
-                        v = float(getattr(rc, "value", None))
+                        raw_value = getattr(rc, "value", None)
+                        if not isinstance(raw_value, (int, float)):
+                            continue
+                        v = float(raw_value)
                         if v > 0.0:
                             best = v if (best is None or v < best) else best
                 except Exception:
@@ -606,7 +609,10 @@ def simulate_path(
                     l = int(getattr(rc, "start_ordinal", 1))
                     h = int(getattr(rc, "end_ordinal", 1))
                     if int(l) <= int(event_ord_1b) <= int(h):
-                        v = float(getattr(rc, "value", None))
+                        raw_value = getattr(rc, "value", None)
+                        if not isinstance(raw_value, (int, float)):
+                            continue
+                        v = float(raw_value)
                         if v > 0.0:
                             best = v if (best is None or v < best) else best
                 except Exception:

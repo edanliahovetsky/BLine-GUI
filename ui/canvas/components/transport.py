@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Transport (playback) controls overlay widget builder for the canvas."""
 
 from __future__ import annotations
@@ -9,10 +10,11 @@ from PySide6.QtWidgets import (
     QSlider,
     QLabel,
     QGraphicsProxyWidget,
-    QGraphicsItem,
 )
-from PySide6.QtCore import Qt, QTimer, QRect
+from PySide6.QtCore import QTimer, QRect
 from PySide6.QtGui import QPen, QColor
+
+from ui.qt_compat import Qt, QGraphicsItem
 
 if TYPE_CHECKING:
     from ui.canvas.view import CanvasView

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 from PySide6.QtGui import QPen, QColor
-from PySide6.QtCore import Qt
+
+from ui.qt_compat import Qt
 
 FIELD_LENGTH_METERS = 16.54
 FIELD_WIDTH_METERS = 8.21

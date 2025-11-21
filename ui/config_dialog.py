@@ -4,16 +4,15 @@ from typing import Callable, Dict, Optional
 
 from PySide6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QLabel,
     QVBoxLayout,
     QGroupBox,
     QWidget,
     QHBoxLayout,
-    QSizePolicy,
 )
-from PySide6.QtCore import Qt
+
+from ui.qt_compat import Qt, QSizePolicy, QDialogButtonBox
 from ui.sidebar.widgets.no_wheel_spinbox import NoWheelDoubleSpinBox
 
 

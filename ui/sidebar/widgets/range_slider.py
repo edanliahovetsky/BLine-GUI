@@ -1,9 +1,11 @@
 """Range slider widget for constraint range selection."""
 
-from PySide6.QtWidgets import QWidget, QSizePolicy
-from PySide6.QtCore import Signal, Qt, QRect, QSize
-from PySide6.QtGui import QPainter, QColor, QPen
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Signal, QRect, QSize
+from PySide6.QtGui import QColor, QPen
 from typing import Optional, Tuple
+
+from ui.qt_compat import Qt, QSizePolicy, QPainter
 
 
 class RangeSlider(QWidget):

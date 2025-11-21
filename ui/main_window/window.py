@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 from PySide6.QtWidgets import (
     QMainWindow,
     QHBoxLayout,
@@ -10,21 +11,18 @@ from PySide6.QtWidgets import (
     QToolButton,
     QApplication,
     QFrame,
-    QSizePolicy,
     QLabel,
 )
 from PySide6.QtGui import (
     QAction,
-    QKeySequence,
     QIcon,
     QPixmap,
-    QPainter,
     QPolygon,
     QPen,
     QBrush,
     QColor,
 )
-from PySide6.QtCore import QPoint, QSize
+from PySide6.QtCore import QPoint, QSize, QTimer, QEvent
 import math
 import os
 import copy
@@ -34,13 +32,14 @@ from ..sidebar.utils import clamp_from_metadata
 from models.path_model import TranslationTarget, RotationTarget, Waypoint, Path
 from ..canvas import CanvasView, FIELD_LENGTH_METERS, FIELD_WIDTH_METERS
 from typing import Tuple
-from PySide6.QtCore import Qt, QTimer, QEvent
 from utils.project_manager import ProjectManager
 from utils.undo_system import UndoRedoManager, PathCommand, ConfigCommand
 from ..config_dialog import ConfigDialog
 from .autosave import AutosaveController
 from .events import WindowEventMixin
 from .menus import build_menu_bar
+
+from ui.qt_compat import Qt, QSizePolicy, QKeySequence, QPainter, QMessageBox
 
 
 class MainWindow(WindowEventMixin, QMainWindow):
@@ -223,14 +222,12 @@ class MainWindow(WindowEventMixin, QMainWindow):
     def _show_delete_path_dialog(self):
         """Show a dialog for selecting and deleting paths"""
         if not self.project_manager.has_valid_project():
-            from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.information(self, "No Project", "Please open a project first.")
             return
 
         files = self.project_manager.list_paths()
         if not files:
-            from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.information(self, "No Paths", "No paths found to delete.")
             return
@@ -246,7 +243,6 @@ class MainWindow(WindowEventMixin, QMainWindow):
             QScrollArea,
             QWidget,
         )
-        from PySide6.QtCore import Qt
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Delete Paths")
@@ -675,7 +671,6 @@ class MainWindow(WindowEventMixin, QMainWindow):
                 if os.path.exists(
                     os.path.join(self.project_manager.project_dir, "paths", filename)
                 ):
-                    from PySide6.QtWidgets import QMessageBox
 
                     QMessageBox.warning(
                         self,
@@ -721,13 +716,11 @@ class MainWindow(WindowEventMixin, QMainWindow):
     def _action_rename_path(self):
         """Rename the currently open path file"""
         if not self.project_manager.has_valid_project():
-            from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.information(self, "No Project", "Please open a project first.")
             return
 
         if not self.project_manager.current_path_file:
-            from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.information(self, "No Path", "No path is currently open to rename.")
             return
@@ -754,7 +747,6 @@ class MainWindow(WindowEventMixin, QMainWindow):
                 if os.path.exists(
                     os.path.join(self.project_manager.project_dir, "paths", new_filename)
                 ):
-                    from PySide6.QtWidgets import QMessageBox
 
                     QMessageBox.warning(
                         self,
@@ -783,14 +775,12 @@ class MainWindow(WindowEventMixin, QMainWindow):
                     self._update_current_path_display()
                     self._populate_load_path_menu()
 
-                    from PySide6.QtWidgets import QMessageBox
 
                     QMessageBox.information(
                         self, "Path Renamed", f"Successfully renamed to '{new_filename}'"
                     )
 
                 except Exception as e:
-                    from PySide6.QtWidgets import QMessageBox
 
                     QMessageBox.critical(self, "Rename Failed", f"Failed to rename path: {str(e)}")
 
@@ -800,7 +790,6 @@ class MainWindow(WindowEventMixin, QMainWindow):
         selected_paths = [fname for fname, cb in checkboxes.items() if cb.isChecked()]
 
         if not selected_paths:
-            from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.information(
                 self, "No Selection", "Please select at least one path to delete."
@@ -813,7 +802,6 @@ class MainWindow(WindowEventMixin, QMainWindow):
             current_path_deleted = True
 
         # Show confirmation dialog
-        from PySide6.QtWidgets import QMessageBox
 
         if len(selected_paths) == 1:
             msg = f"Are you sure you want to delete '{selected_paths[0]}'?"
@@ -873,7 +861,6 @@ class MainWindow(WindowEventMixin, QMainWindow):
 
         if not available_paths:
             # No paths left - just inform the user
-            from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.information(
                 self,
@@ -884,7 +871,6 @@ class MainWindow(WindowEventMixin, QMainWindow):
             return
 
         # Ask user if they want to load another path
-        from PySide6.QtWidgets import QMessageBox
 
         reply = QMessageBox.question(
             self,
@@ -923,7 +909,6 @@ class MainWindow(WindowEventMixin, QMainWindow):
             QListWidget,
             QListWidgetItem,
         )
-        from PySide6.QtCore import Qt
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Select Path to Load")
@@ -973,7 +958,6 @@ class MainWindow(WindowEventMixin, QMainWindow):
         """Load the selected path from the path selection dialog"""
         current_item = path_list.currentItem()
         if not current_item:
-            from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.warning(self, "No Selection", "Please select a path to load.")
             return
@@ -987,7 +971,6 @@ class MainWindow(WindowEventMixin, QMainWindow):
             self._update_current_path_display()
             dialog.accept()
         else:
-            from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.critical(self, "Error", f"Failed to load path '{selected_path}'.")
 

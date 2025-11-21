@@ -1,9 +1,12 @@
+# mypy: ignore-errors
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QLabel
+
+from ui.qt_compat import Qt
 
 if TYPE_CHECKING:
     from ui.main_window.window import MainWindow

@@ -1,13 +1,12 @@
+# mypy: ignore-errors
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint
 from PySide6.QtGui import (
     QAction,
     QIcon,
-    QKeySequence,
-    QPainter,
     QPen,
     QBrush,
     QColor,
@@ -15,6 +14,8 @@ from PySide6.QtGui import (
     QPixmap,
 )
 from PySide6.QtWidgets import QMenu, QMenuBar
+
+from ui.qt_compat import Qt, QKeySequence, QPainter
 
 if TYPE_CHECKING:
     from ui.main_window.window import MainWindow

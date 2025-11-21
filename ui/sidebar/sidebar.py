@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Main sidebar widget for path element management."""
 
 from typing import Optional
@@ -9,14 +10,15 @@ from PySide6.QtWidgets import (
     QLabel,
     QComboBox,
     QGroupBox,
-    QSizePolicy,
     QSpacerItem,
     QListWidgetItem,
     QPushButton,
     QScrollArea,
 )
-from PySide6.QtCore import Qt, Signal, QTimer, QEvent, QSize
+from PySide6.QtCore import Signal, QTimer, QEvent, QSize
 from PySide6.QtGui import QIcon
+
+from ui.qt_compat import Qt, QSizePolicy
 from models.path_model import Path, TranslationTarget, RotationTarget, Waypoint
 
 

@@ -21,7 +21,7 @@ icon = assets/rebel_logo.png
 [python]
 
 # python path (leave empty to use the current interpreter)
-python_path =
+python_path = /Users/edan/FRC/FRC-PTP-GUI/.venv/bin/python3.13
 
 # python packages to install
 packages = Nuitka==2.6.8
@@ -39,7 +39,7 @@ qml_files =
 excluded_qml_plugins = 
 
 # qt modules used. comma separated
-modules = DBus,Widgets,Gui,Core
+modules = Core,DBus,Gui,Widgets
 
 # qt plugins used by the application. only relevant for desktop deployment
 # for qt plugins used in android application see [android][plugins]

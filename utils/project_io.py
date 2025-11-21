@@ -201,13 +201,10 @@ def deserialize_path(data: Any, default_lookup: DefaultLookup | None = None) -> 
                     profiled_rotation=profiled_rotation_val,
                 )
                 if t_ratio_val is None:
-                    try:
-                        rotation._legacy_pos = (
-                            float(item.get("x_meters", 0.0)),
-                            float(item.get("y_meters", 0.0)),
-                        )
-                    except Exception:
-                        pass
+                    rx = _opt_float(item.get("x_meters"))
+                    ry = _opt_float(item.get("y_meters"))
+                    if rx is not None and ry is not None:
+                        rotation.legacy_position = (rx, ry)
                 path.path_elements.append(rotation)
             elif typ == "waypoint":
                 translation_data = item.get("translation_target", {}) or {}
@@ -219,14 +216,10 @@ def deserialize_path(data: Any, default_lookup: DefaultLookup | None = None) -> 
                 )
                 if "t_ratio" not in rotation_data:
                     rotation.t_ratio = 0.0
-                    try:
-                        if "x_meters" in rotation_data or "y_meters" in rotation_data:
-                            rotation._legacy_pos = (
-                                float(rotation_data.get("x_meters", 0.0)),
-                                float(rotation_data.get("y_meters", 0.0)),
-                            )
-                    except Exception:
-                        pass
+                    rx = _opt_float(rotation_data.get("x_meters"))
+                    ry = _opt_float(rotation_data.get("y_meters"))
+                    if rx is not None and ry is not None:
+                        rotation.legacy_position = (rx, ry)
                 handoff_radius = _handoff_default(
                     translation_data.get("intermediate_handoff_radius_meters"),
                     default_lookup,
@@ -305,14 +298,12 @@ def _convert_legacy_positions(path: Path) -> None:
                 target = element.rotation_target
             if (
                 target is None
-                or not hasattr(target, "_legacy_pos")
-                or hasattr(target, "_legacy_converted")
+                or not isinstance(target, RotationTarget)
+                or target.legacy_position is None
+                or target.legacy_converted
             ):
                 continue
-            legacy = getattr(target, "_legacy_pos", None)
-            if legacy is None:
-                continue
-            rx, ry = legacy
+            rx, ry = target.legacy_position
             prev_pos = _find_neighbor(path.path_elements, idx, reverse=True)
             next_pos = _find_neighbor(path.path_elements, idx, reverse=False)
             if prev_pos is None or next_pos is None:
@@ -329,11 +320,8 @@ def _convert_legacy_positions(path: Path) -> None:
                     t_value = ((rx - ax) * dx + (ry - ay) * dy) / denom
                     t_value = max(0.0, min(1.0, t_value))
                 setattr(target, "t_ratio", float(t_value))
-            try:
-                delattr(target, "_legacy_pos")
-            except Exception:
-                pass
-            setattr(target, "_legacy_converted", True)
+            target.legacy_position = None
+            target.legacy_converted = True
     except Exception:
         pass
 

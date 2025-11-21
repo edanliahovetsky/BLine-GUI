@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from abc import ABC
 
 
@@ -55,6 +55,10 @@ class RotationTarget(PathElement):
     # 0.0 corresponds to the previous anchor, 1.0 to the next anchor.
     t_ratio: float = 0.0
     profiled_rotation: bool = True
+    legacy_position: Optional[Tuple[float, float]] = field(
+        default=None, repr=False, compare=False
+    )
+    legacy_converted: bool = field(default=False, repr=False, compare=False)
 
 
 @dataclass

@@ -4,9 +4,11 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsPolygonItem, QGraphicsItem
+from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsPolygonItem
 from PySide6.QtCore import QPointF
 from PySide6.QtGui import QBrush, QColor, QPen, QPolygonF
+
+from ui.qt_compat import QGraphicsItem
 
 if TYPE_CHECKING:
     from ui.canvas.view import CanvasView

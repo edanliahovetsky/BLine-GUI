@@ -46,6 +46,7 @@ strict_optional = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unreachable = true
+files = ["models", "utils", "scripts", "tests"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

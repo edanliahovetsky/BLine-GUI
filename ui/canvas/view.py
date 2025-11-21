@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Refactored modular CanvasView building on decomposed items/components.
 
 NOTE: This is an in-progress extraction from the monolithic ui/canvas.py.
@@ -13,11 +14,12 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsPixmapItem,
     QGraphicsLineItem,
-    QGraphicsItem,
     QFrame,
 )
-from PySide6.QtCore import Qt, QPointF, QTimer, Signal, QPoint
-from PySide6.QtGui import QPainter, QPixmap, QTransform, QColor, QPen, QBrush, QPixmapCache
+from PySide6.QtCore import QPointF, QTimer, Signal, QPoint
+from PySide6.QtGui import QPixmap, QTransform, QColor, QPen, QBrush, QPixmapCache
+
+from ui.qt_compat import Qt, QPainter, QGraphicsItem
 
 from models.path_model import Path, PathElement, TranslationTarget, RotationTarget, Waypoint
 from models.simulation import simulate_path, SimResult

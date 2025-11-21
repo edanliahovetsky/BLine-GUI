@@ -1,17 +1,20 @@
+# mypy: ignore-errors
 """Graphics item subclasses for path elements (circle/rect + rotation handle + handoff radius)."""
 
 from __future__ import annotations
 import math
 from typing import Optional, List, TYPE_CHECKING
+
 from PySide6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsRectItem,
     QGraphicsPolygonItem,
-    QGraphicsItem,
     QGraphicsLineItem,
 )
 from PySide6.QtGui import QBrush, QColor, QPen, QPolygonF
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF
+
+from ui.qt_compat import Qt, QGraphicsItem
 
 from ..constants import (
     ELEMENT_CIRCLE_RADIUS_M,

@@ -22,9 +22,15 @@ def get_translation_position(element: Any) -> Tuple[float, float]:
 def clamp_from_metadata(key: str, value: float) -> float:
     """Clamp a value based on metadata range constraints."""
     meta = SPINNER_METADATA.get(key, {})
-    value_min, value_max = meta.get("range", (None, None))
-    if value_min is None or value_max is None:
+    range_values = meta.get("range")
+    if (
+        not isinstance(range_values, tuple)
+        or len(range_values) != 2
+        or not all(isinstance(v, (int, float)) for v in range_values)
+    ):
         return value
+    value_min = float(range_values[0])
+    value_max = float(range_values[1])
     if value < value_min:
         return value_min
     if value > value_max:

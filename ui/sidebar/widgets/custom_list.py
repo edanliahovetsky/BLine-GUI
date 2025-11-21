@@ -1,7 +1,9 @@
 """Custom list widget for draggable path elements."""
 
 from PySide6.QtWidgets import QListWidget
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Signal, QTimer
+
+from ui.qt_compat import Qt
 
 
 class PersistentCustomList(QListWidget):

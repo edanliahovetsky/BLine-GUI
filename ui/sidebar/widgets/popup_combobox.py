@@ -1,8 +1,10 @@
 """Popup combobox widget for adding optional properties."""
 
-from PySide6.QtWidgets import QWidget, QPushButton, QMenu, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import QWidget, QPushButton, QMenu, QHBoxLayout
 from PySide6.QtCore import Signal, QPoint, QSize
 from PySide6.QtGui import QIcon, QGuiApplication
+
+from ui.qt_compat import QMessageBox
 
 
 class PopupCombobox(QWidget):
