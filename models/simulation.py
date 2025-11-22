@@ -540,86 +540,147 @@ def simulate_path(
         )
     )
 
-    def _active_translation_limit(key: str, next_anchor_ord: int) -> Optional[float]:
-        """Return the most restrictive translation constraint (minimum value) active
-        for the given next anchor ordinal (1-based). If none match, returns None.
-        """
-        best: Optional[float] = None
-        try:
-            for rc in getattr(path, "ranged_constraints", []) or []:
-                try:
-                    if not isinstance(rc, RangedConstraint):
-                        continue
-                    if rc.key != key:
-                        continue
-                    l = int(getattr(rc, "start_ordinal", 1))
-                    h = int(getattr(rc, "end_ordinal", 1))
-                    if int(l) <= int(next_anchor_ord) <= int(h):
-                        raw_value = getattr(rc, "value", None)
-                        if not isinstance(raw_value, (int, float)):
-                            continue
-                        v = float(raw_value)
-                        if v > 0.0:
-                            best = v if (best is None or v < best) else best
-                except Exception:
+def _active_translation_limit(
+    path: Path, key: str, next_anchor_ord: int
+) -> Optional[float]:
+    """Return the most restrictive translation constraint (minimum value) active
+    for the given next anchor ordinal (1-based). If none match, returns None.
+    """
+    best: Optional[float] = None
+    try:
+        for rc in getattr(path, "ranged_constraints", []) or []:
+            try:
+                if not isinstance(rc, RangedConstraint):
                     continue
-        except Exception:
-            best = None
-        return best
-
-    def _rotation_target_event_ordinal(global_s_now: float) -> Optional[int]:
-        """Return the 1-based ordinal of the rotation-domain 'current target' event.
-        - Before an event: that event
-        - Exactly at an event: the next event if it exists, otherwise this event
-        - After the last event: the last event
-        """
-        if not global_keyframes:
-            return None
-        tol_s = 1e-6
-        n = len(global_keyframes)
-        for i, kf in enumerate(global_keyframes):
-            if global_s_now < kf.s_m - tol_s:
-                return int(getattr(kf, "event_ordinal_1b", i + 1))
-            if abs(global_s_now - kf.s_m) <= tol_s:
-                # At an event: switch immediately to next if available
-                if i + 1 < n:
-                    next_kf = global_keyframes[i + 1]
-                    return int(getattr(next_kf, "event_ordinal_1b", i + 2))
-                # No next event; continue using this event
-                return int(getattr(kf, "event_ordinal_1b", i + 1))
-        # After the last event
-        last_kf = global_keyframes[-1]
-        return int(getattr(last_kf, "event_ordinal_1b", len(global_keyframes)))
-
-    def _active_rotation_limit(key: str, global_s_now: float) -> Optional[float]:
-        """Return the most restrictive rotation constraint (minimum value) for the
-        current rotation target event. If none match, returns None.
-        """
-        event_ord_1b = _rotation_target_event_ordinal(global_s_now)
-        if event_ord_1b is None or event_ord_1b <= 0:
-            return None
-        best: Optional[float] = None
-        try:
-            for rc in getattr(path, "ranged_constraints", []) or []:
-                try:
-                    if not isinstance(rc, RangedConstraint):
-                        continue
-                    if rc.key != key:
-                        continue
-                    l = int(getattr(rc, "start_ordinal", 1))
-                    h = int(getattr(rc, "end_ordinal", 1))
-                    if int(l) <= int(event_ord_1b) <= int(h):
-                        raw_value = getattr(rc, "value", None)
-                        if not isinstance(raw_value, (int, float)):
-                            continue
-                        v = float(raw_value)
-                        if v > 0.0:
-                            best = v if (best is None or v < best) else best
-                except Exception:
+                if rc.key != key:
                     continue
-        except Exception:
-            best = None
-        return best
+                l = int(getattr(rc, "start_ordinal", 1))
+                h = int(getattr(rc, "end_ordinal", 1))
+                if int(l) <= int(next_anchor_ord) <= int(h):
+                    raw_value = getattr(rc, "value", None)
+                    if not isinstance(raw_value, (int, float)):
+                        continue
+                    v = float(raw_value)
+                    if v > 0.0:
+                        best = v if (best is None or v < best) else best
+            except Exception:
+                continue
+    except Exception:
+        best = None
+    return best
+
+
+def _rotation_target_event_ordinal(
+    global_keyframes: List[_GlobalRotationKeyframe], global_s_now: float
+) -> Optional[int]:
+    """Return the 1-based ordinal of the rotation-domain 'current target' event.
+    - Before an event: that event
+    - Exactly at an event: the next event if it exists, otherwise this event
+    - After the last event: the last event
+    """
+    if not global_keyframes:
+        return None
+    tol_s = 1e-6
+    n = len(global_keyframes)
+    for i, kf in enumerate(global_keyframes):
+        if global_s_now < kf.s_m - tol_s:
+            return int(getattr(kf, "event_ordinal_1b", i + 1))
+        if abs(global_s_now - kf.s_m) <= tol_s:
+            # At an event: switch immediately to next if available
+            if i + 1 < n:
+                next_kf = global_keyframes[i + 1]
+                return int(getattr(next_kf, "event_ordinal_1b", i + 2))
+            # No next event; continue using this event
+            return int(getattr(kf, "event_ordinal_1b", i + 1))
+    # After the last event
+    last_kf = global_keyframes[-1]
+    return int(getattr(last_kf, "event_ordinal_1b", len(global_keyframes)))
+
+
+def _active_rotation_limit(
+    path: Path, global_keyframes: List[_GlobalRotationKeyframe], key: str, global_s_now: float
+) -> Optional[float]:
+    """Return the most restrictive rotation constraint (minimum value) for the
+    current rotation target event. If none match, returns None.
+    """
+    event_ord_1b = _rotation_target_event_ordinal(global_keyframes, global_s_now)
+    if event_ord_1b is None or event_ord_1b <= 0:
+        return None
+    best: Optional[float] = None
+    try:
+        for rc in getattr(path, "ranged_constraints", []) or []:
+            try:
+                if not isinstance(rc, RangedConstraint):
+                    continue
+                if rc.key != key:
+                    continue
+                l = int(getattr(rc, "start_ordinal", 1))
+                h = int(getattr(rc, "end_ordinal", 1))
+                if int(l) <= int(event_ord_1b) <= int(h):
+                    raw_value = getattr(rc, "value", None)
+                    if not isinstance(raw_value, (int, float)):
+                        continue
+                    v = float(raw_value)
+                    if v > 0.0:
+                        best = v if (best is None or v < best) else best
+            except Exception:
+                continue
+    except Exception:
+        best = None
+    return best
+
+
+def simulate_path(
+    path: Path,
+    config: Optional[Dict] = None,
+    dt_s: float = 0.02,
+) -> SimResult:
+    cfg = config or {}
+    segments, anchors, anchor_path_indices = _build_segments(path)
+
+    poses_by_time: Dict[float, Tuple[float, float, float]] = {}
+    times_sorted: List[float] = []
+    trail_points: List[Tuple[float, float]] = []
+
+    if len(anchors) < 2 or len(segments) == 0:
+        if anchors:
+            x0, y0 = anchors[0]
+            poses_by_time[0.0] = (x0, y0, 0.0)
+            times_sorted = [0.0]
+            trail_points = [(x0, y0)]
+        return SimResult(
+            poses_by_time=poses_by_time,
+            times_sorted=times_sorted,
+            total_time_s=0.0,
+            trail_points=trail_points,
+        )
+
+    c = getattr(path, "constraints", None)
+    base_max_v = _resolve_constraint(
+        getattr(c, "max_velocity_meters_per_sec", None),
+        cfg.get("default_max_velocity_meters_per_sec"),
+        3.0,
+    )
+    base_max_a = _resolve_constraint(
+        getattr(c, "max_acceleration_meters_per_sec2", None),
+        cfg.get("default_max_acceleration_meters_per_sec2"),
+        2.5,
+    )
+
+    base_max_omega = math.radians(
+        _resolve_constraint(
+            getattr(c, "max_velocity_deg_per_sec", None),
+            cfg.get("default_max_velocity_deg_per_sec"),
+            180.0,
+        )
+    )
+    base_max_alpha = math.radians(
+        _resolve_constraint(
+            getattr(c, "max_acceleration_deg_per_sec2", None),
+            cfg.get("default_max_acceleration_deg_per_sec2"),
+            360.0,
+        )
+    )
 
     # Ideal end tolerances (always zero for ideal simulation). Use small epsilons internally for numerical robustness.
     end_translation_tolerance_m = 0.0
@@ -782,16 +843,16 @@ def simulate_path(
 
         # Resolve dynamic translation constraints for this segment based on next anchor ordinal (1-based)
         next_anchor_ord_1b = seg_idx + 2
-        max_v_eff = _active_translation_limit("max_velocity_meters_per_sec", next_anchor_ord_1b)
+        max_v_eff = _active_translation_limit(path, "max_velocity_meters_per_sec", next_anchor_ord_1b)
         max_a_eff = _active_translation_limit(
-            "max_acceleration_meters_per_sec2", next_anchor_ord_1b
+            path, "max_acceleration_meters_per_sec2", next_anchor_ord_1b
         )
         max_v = float(max_v_eff) if max_v_eff is not None else float(base_max_v)
         max_a = float(max_a_eff) if max_a_eff is not None else float(base_max_a)
 
         # Resolve dynamic rotation constraints based on the next rotation event ahead of current s
-        max_omega_eff = _active_rotation_limit("max_velocity_deg_per_sec", global_s)
-        max_alpha_eff = _active_rotation_limit("max_acceleration_deg_per_sec2", global_s)
+        max_omega_eff = _active_rotation_limit(path, global_keyframes, "max_velocity_deg_per_sec", global_s)
+        max_alpha_eff = _active_rotation_limit(path, global_keyframes, "max_acceleration_deg_per_sec2", global_s)
         max_omega = (
             math.radians(float(max_omega_eff))
             if max_omega_eff is not None
