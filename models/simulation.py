@@ -628,9 +628,19 @@ def simulate_path(
         )
     )
 
-    # Ideal end tolerances (always zero for ideal simulation). Use small epsilons internally for numerical robustness.
-    end_translation_tolerance_m = 0.0
-    end_rotation_tolerance_rad = 0.0
+    # Resolve end tolerances from path constraints and config defaults
+    end_translation_tolerance_m = _resolve_constraint(
+        getattr(c, "end_translation_tolerance_meters", None),
+        cfg.get("default_end_translation_tolerance_meters"),
+        0.03,
+    )
+    end_rotation_tolerance_rad = math.radians(
+        _resolve_constraint(
+            getattr(c, "end_rotation_tolerance_deg", None),
+            cfg.get("default_end_rotation_tolerance_deg"),
+            2.0,
+        )
+    )
     _EPS_POS = 1e-3
     _EPS_ANG = 1e-3
 
@@ -822,9 +832,10 @@ def simulate_path(
 
         max_a_mag = min(max_a, max_a_dyn)
 
-        v_allow_decel = math.sqrt(2.0 * max_a_mag * remaining)
-        # First cap by velocity and distance-based decel constraint; leave acceleration limiting to the limiter below
-        unconstrained_v_des = min(max_v, max_v_dyn, v_allow_decel)
+        # P controller: drive remaining distance to zero
+        v_p_control = math.sqrt(2.0 * base_max_a * remaining)
+        # First cap by velocity limit; leave acceleration limiting to the limiter below
+        unconstrained_v_des = min(max_v, max_v_dyn, v_p_control)
         v_des_scalar = max(0.0, unconstrained_v_des)
         # If on the final segment and desired velocity collapses to ~0 while still away from the endpoint,
         # nudge toward the endpoint by requesting just enough velocity to reach it within one dt (bounded by max_v).
