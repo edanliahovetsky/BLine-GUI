@@ -1,6 +1,7 @@
-# FRC Path Tuning Planner GUI
+# BLine-GUI
+Check out 🔧 **[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** for conceptual documentation and general overview.
 
-An editor and simulator for tuning FRC robot paths, built with PySide6.
+An editor and simulator for tuning BLine paths, built with PySide6.
 
 ## Requirements
 
