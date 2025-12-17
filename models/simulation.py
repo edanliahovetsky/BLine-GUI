@@ -697,14 +697,22 @@ def simulate_path(
     def remaining_distance_from(
         seg_index: int, current_x: float, current_y: float, proj_s: float
     ) -> float:
+        """Calculate remaining path distance by summing actual distances to each subsequent target."""
         if seg_index >= len(segments):
             return 0.0
-        seg = segments[seg_index]
-        rem_in_seg = max(0.0, seg.length_m - proj_s)
-        rem = rem_in_seg
-        for k in range(seg_index + 1, len(segments)):
-            rem += max(segments[k].length_m, 0.0)
-        return rem
+        
+        remaining_distance = 0.0
+        prev_x, prev_y = current_x, current_y  # Start from current position
+        
+        # Iterate through all remaining segments and sum distances to each endpoint
+        for k in range(seg_index, len(segments)):
+            seg = segments[k]
+            # Add distance from previous point to end of this segment
+            remaining_distance += hypot2(seg.bx - prev_x, seg.by - prev_y)
+            # Update previous point to end of this segment
+            prev_x, prev_y = seg.bx, seg.by
+        
+        return remaining_distance
 
     # Compute a realistic guard time using the slowest effective speed limits (including ranged constraints)
     min_trans_v = float(base_max_v)
@@ -832,7 +840,7 @@ def simulate_path(
 
         max_a_mag = min(max_a, max_a_dyn)
 
-        # P controller: drive remaining distance to zero
+        # 2ad controller: drive remaining distance to zero
         v_p_control = math.sqrt(2.0 * base_max_a * remaining)
         # First cap by velocity limit; leave acceleration limiting to the limiter below
         unconstrained_v_des = min(max_v, max_v_dyn, v_p_control)
@@ -898,41 +906,44 @@ def simulate_path(
         trail_points.append((float(x), float(y)))
 
         # Check end-of-path conditions with ideal (zero) tolerances and internal eps snapping
-        dx_end = end_x - x
-        dy_end = end_y - y
-        dist_to_final = hypot2(dx_end, dy_end)
-        rot_err = abs(shortest_angular_distance(end_heading_target, theta))
+        # Only check final endpoint termination when on the LAST segment to avoid early termination
+        # when start and end points overlap (the robot must traverse all intermediate segments first)
+        if seg_idx == len(segments) - 1:
+            dx_end = end_x - x
+            dy_end = end_y - y
+            dist_to_final = hypot2(dx_end, dy_end)
+            rot_err = abs(shortest_angular_distance(end_heading_target, theta))
 
-        snapped_pos = False
-        snapped_rot = False
-        if dist_to_final <= _EPS_POS:
-            x = end_x
-            y = end_y
-            dist_to_final = 0.0
-            snapped_pos = True
-        if rot_err <= _EPS_ANG:
-            theta = end_heading_target
-            rot_err = 0.0
-            snapped_rot = True
+            snapped_pos = False
+            snapped_rot = False
+            if dist_to_final <= _EPS_POS:
+                x = end_x
+                y = end_y
+                dist_to_final = 0.0
+                snapped_pos = True
+            if rot_err <= _EPS_ANG:
+                theta = end_heading_target
+                rot_err = 0.0
+                snapped_rot = True
 
-        if snapped_pos or snapped_rot:
-            poses_by_time[t_key] = (float(x), float(y), float(theta))
-            trail_points[-1] = (float(x), float(y))
-            # Zero corresponding velocities after snapping to avoid dithering away from the target
-            if snapped_pos:
-                limited = ChassisSpeeds(0.0, 0.0, limited.omega_radps)
-                speeds = ChassisSpeeds(0.0, 0.0, speeds.omega_radps)
-            if snapped_rot:
-                limited = ChassisSpeeds(limited.vx_mps, limited.vy_mps, 0.0)
-                speeds = ChassisSpeeds(speeds.vx_mps, speeds.vy_mps, 0.0)
-            # If both snapped this step, we are exactly at the final state; terminate immediately
-            if snapped_pos and snapped_rot:
+            if snapped_pos or snapped_rot:
+                poses_by_time[t_key] = (float(x), float(y), float(theta))
+                trail_points[-1] = (float(x), float(y))
+                # Zero corresponding velocities after snapping to avoid dithering away from the target
+                if snapped_pos:
+                    limited = ChassisSpeeds(0.0, 0.0, limited.omega_radps)
+                    speeds = ChassisSpeeds(0.0, 0.0, speeds.omega_radps)
+                if snapped_rot:
+                    limited = ChassisSpeeds(limited.vx_mps, limited.vy_mps, 0.0)
+                    speeds = ChassisSpeeds(speeds.vx_mps, speeds.vy_mps, 0.0)
+                # If both snapped this step, we are exactly at the final state; terminate immediately
+                if snapped_pos and snapped_rot:
+                    speeds = ChassisSpeeds(0.0, 0.0, 0.0)
+                    break
+
+            if dist_to_final <= end_translation_tolerance_m and rot_err <= end_rotation_tolerance_rad:
                 speeds = ChassisSpeeds(0.0, 0.0, 0.0)
                 break
-
-        if dist_to_final <= end_translation_tolerance_m and rot_err <= end_rotation_tolerance_rad:
-            speeds = ChassisSpeeds(0.0, 0.0, 0.0)
-            break
 
         t_s += dt_s
         speeds = limited
