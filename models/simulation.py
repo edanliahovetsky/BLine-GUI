@@ -383,67 +383,6 @@ def _desired_heading_for_progress(
     return th_last, 0.0, profiled_last
 
 
-def _trapezoidal_rotation_profile(
-    current_theta: float,
-    target_theta: float,
-    current_omega: float,
-    max_omega: float,
-    max_alpha: float,
-    dt: float,
-) -> float:
-    """
-    Time-optimal, discrete-time trapezoidal profile without heuristics.
-    Chooses an angular velocity for this timestep that respects:
-    - acceleration limit (|Δω| ≤ max_alpha * dt)
-    - velocity limit (|ω| ≤ max_omega)
-    - no-overshoot within this step plus future optimal deceleration:
-      v*dt + v^2/(2*max_alpha) ≤ |angular_error|
-    """
-    angular_error = shortest_angular_distance(target_theta, current_theta)
-
-    if dt <= 0.0 or max_alpha <= 0.0 or max_omega <= 0.0:
-        return 0.0
-
-    error_mag = abs(angular_error)
-    if error_mag == 0.0:
-        # No remaining error: decelerate toward zero as fast as possible
-        if abs(current_omega) <= max_alpha * dt:
-            return 0.0
-        return current_omega - math.copysign(max_alpha * dt, current_omega)
-
-    direction = math.copysign(1.0, angular_error)
-    v_curr_aligned = direction * current_omega  # velocity along desired direction (can be negative)
-
-    # Upper bound on velocity this step to avoid overshoot in discrete time:
-    # Solve v*dt + v^2/(2*a) <= error_mag for v >= 0
-    a_dt = max_alpha * dt
-    v_step_bound = max(0.0, -a_dt + math.sqrt(a_dt * a_dt + 2.0 * max_alpha * error_mag))
-
-    # Also respect classical distance and speed limits
-    v_distance_bound = math.sqrt(2.0 * max_alpha * error_mag)
-    v_allow = min(v_step_bound, v_distance_bound, max_omega)
-
-    # Acceleration-limited change from current velocity toward the largest allowed value
-    v_reachable_min = v_curr_aligned - a_dt
-    v_reachable_max = v_curr_aligned + a_dt
-
-    # Choose the maximum reachable velocity that does not exceed v_allow
-    if v_reachable_max <= v_allow:
-        v_next_aligned = v_reachable_max
-    elif v_reachable_min <= v_allow <= v_reachable_max:
-        v_next_aligned = v_allow
-    else:
-        # Can't reach within bound this step; decelerate as much as possible
-        v_next_aligned = v_reachable_min
-
-    # Convert back to signed angular velocity and enforce overall speed limit
-    desired_omega = direction * v_next_aligned
-    if abs(desired_omega) > max_omega:
-        desired_omega = math.copysign(max_omega, desired_omega)
-
-    return desired_omega
-
-
 def _resolve_constraint(value: Optional[float], fallback: Optional[float], default: float) -> float:
     try:
         if value is not None and float(value) > 0.0:
@@ -628,19 +567,7 @@ def simulate_path(
         )
     )
 
-    # Resolve end tolerances from path constraints and config defaults
-    end_translation_tolerance_m = _resolve_constraint(
-        getattr(c, "end_translation_tolerance_meters", None),
-        cfg.get("default_end_translation_tolerance_meters"),
-        0.03,
-    )
-    end_rotation_tolerance_rad = math.radians(
-        _resolve_constraint(
-            getattr(c, "end_rotation_tolerance_deg", None),
-            cfg.get("default_end_rotation_tolerance_deg"),
-            2.0,
-        )
-    )
+    # Tiny epsilon for exact end goal termination (idealized mechanics)
     _EPS_POS = 1e-3
     _EPS_ANG = 1e-3
 
@@ -658,20 +585,6 @@ def simulate_path(
 
     first_seg = segments[0]
     start_heading_base = _default_heading(first_seg.ax, first_seg.ay, first_seg.bx, first_seg.by)
-
-    # Find the first rotation target or waypoint to use as initial heading
-    initial_rotation = None
-    for elem in path.path_elements:
-        if isinstance(elem, RotationTarget):
-            initial_rotation = float(elem.rotation_radians)
-            break
-        elif isinstance(elem, Waypoint):
-            initial_rotation = float(elem.rotation_target.rotation_radians)
-            break
-
-    # Use the first rotation target's heading if found, otherwise fall back to path direction
-    if initial_rotation is not None:
-        start_heading_base = initial_rotation
 
     # Build global rotation keyframes for rotation event ordinals and compute initial heading at s=0
     global_keyframes = _build_global_rotation_keyframes(
@@ -853,20 +766,17 @@ def simulate_path(
         vx_des = v_des_scalar * ux
         vy_des = v_des_scalar * uy
 
-        # ROTATION CONTROL: decoupled from translation
-        # For both profiled and non-profiled intervals, use desired_theta returned by
-        # _desired_heading_for_global_s. That function interpolates for profiled and
-        # snaps to the end target for non-profiled inside the interval, and holds before it.
+        # ROTATION CONTROL: 2ad-style control matching translation approach
+        # Use desired_theta from global keyframes as the rotation target
         rotation_target_theta = desired_theta
+        angular_error = shortest_angular_distance(rotation_target_theta, theta)
 
-        omega_des = _trapezoidal_rotation_profile(
-            current_theta=theta,
-            target_theta=rotation_target_theta,
-            current_omega=speeds.omega_radps,
-            max_omega=max_omega,
-            max_alpha=max_alpha,
-            dt=dt_s,
-        )
+        # 2ad controller for rotation: omega = sqrt(2 * alpha * |error|)
+        omega_control = math.sqrt(2.0 * max_alpha * abs(angular_error))
+        # Cap by max_omega and apply sign based on error direction
+        omega_des = min(omega_control, max_omega)
+        if angular_error < 0:
+            omega_des = -omega_des
 
         # Apply acceleration limiting AFTER desired speed has been clamped to max_v
         limited = limit_acceleration(
@@ -940,10 +850,6 @@ def simulate_path(
                 if snapped_pos and snapped_rot:
                     speeds = ChassisSpeeds(0.0, 0.0, 0.0)
                     break
-
-            if dist_to_final <= end_translation_tolerance_m and rot_err <= end_rotation_tolerance_rad:
-                speeds = ChassisSpeeds(0.0, 0.0, 0.0)
-                break
 
         t_s += dt_s
         speeds = limited
