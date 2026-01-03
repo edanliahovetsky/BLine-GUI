@@ -333,15 +333,34 @@ def create_shortcut_dialog() -> int:
                     )
             else:
                 # Windows/Linux: rely on pyshortcuts
-                make_shortcut(
-                    script=bline_cmd,
-                    name="BLine",
-                    description="FRC Robot Path Planning Tool",
-                    icon=icon,
-                    desktop=desktop_cb.isChecked(),
-                    startmenu=startmenu_checked,
-                    terminal=False,
-                )
+                if system == "Windows":
+                    # On Windows, avoid relying on the `bline` launcher (console vs gui-script wrappers can vary
+                    # under pipx). Instead, point the shortcut directly at pythonw.exe in the current venv and
+                    # run the installed module.
+                    python_exe = Path(sys.executable)
+                    pythonw_exe = python_exe.with_name("pythonw.exe")
+                    exe = str(pythonw_exe if pythonw_exe.exists() else python_exe)
+                    cmd = f"\"{exe}\" -m main"
+                    make_shortcut(
+                        script=cmd,
+                        name="BLine",
+                        description="FRC Robot Path Planning Tool",
+                        icon=icon,
+                        desktop=desktop_cb.isChecked(),
+                        startmenu=startmenu_checked,
+                        terminal=False,
+                        noexe=True,
+                    )
+                else:
+                    make_shortcut(
+                        script=bline_cmd,
+                        name="BLine",
+                        description="FRC Robot Path Planning Tool",
+                        icon=icon,
+                        desktop=desktop_cb.isChecked(),
+                        startmenu=startmenu_checked,
+                        terminal=False,
+                    )
             
             locations = []
             if desktop_cb.isChecked():

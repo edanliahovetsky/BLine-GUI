@@ -15,11 +15,9 @@ dependencies = [
     "pyshortcuts>=1.9",
 ]
 
-[project.gui-scripts]
-bline = "main:main"
-
 [project.scripts]
-# Console entrypoint (useful for debugging on Windows when the GUI launcher exits silently)
+bline = "main:main"
+# Console entrypoint (useful for debugging)
 bline-cli = "main:main"
 
 [project.optional-dependencies]
