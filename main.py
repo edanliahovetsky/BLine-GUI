@@ -260,10 +260,11 @@ def create_shortcut_dialog() -> int:
         startmenu_cb.setChecked(True)
         layout.addWidget(startmenu_cb)
     elif system == "Windows":
-        # Windows Taskbar pinning is not reliably supported programmatically.
-        # We only offer a Desktop shortcut here.
-        startmenu_cb = None
-        startmenu_text = None
+        # Start Menu = Apps list/shortcut folder (NOT "run on startup").
+        startmenu_text = "Start Menu (Apps list)"
+        startmenu_cb = QCheckBox(startmenu_text)
+        startmenu_cb.setChecked(True)
+        layout.addWidget(startmenu_cb)
     else:
         startmenu_text = "Applications menu"
         startmenu_cb = QCheckBox(startmenu_text)
