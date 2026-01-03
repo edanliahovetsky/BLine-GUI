@@ -18,6 +18,10 @@ dependencies = [
 [project.gui-scripts]
 bline = "main:main"
 
+[project.scripts]
+# Console entrypoint (useful for debugging on Windows when the GUI launcher exits silently)
+bline-cli = "main:main"
+
 [project.optional-dependencies]
 dev = [
     "black>=24.8.0",
