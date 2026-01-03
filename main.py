@@ -280,8 +280,14 @@ def get_windows_known_folder(folder: str) -> Path:
         return GUID(u.time_low, u.time_mid, u.time_hi_version, data4)
 
     SHGetKnownFolderPath = ctypes.windll.shell32.SHGetKnownFolderPath
-    SHGetKnownFolderPath.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE, ctypes.POINTER(ctypes.c_wchar_p)]
-    SHGetKnownFolderPath.restype = wintypes.HRESULT
+    SHGetKnownFolderPath.argtypes = [
+        ctypes.POINTER(GUID),
+        wintypes.DWORD,
+        wintypes.HANDLE,
+        ctypes.POINTER(ctypes.c_wchar_p),
+    ]
+    # Some Python builds don't expose wintypes.HRESULT; use c_long.
+    SHGetKnownFolderPath.restype = ctypes.c_long
 
     CoTaskMemFree = ctypes.windll.ole32.CoTaskMemFree
     CoTaskMemFree.argtypes = [wintypes.LPVOID]
