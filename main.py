@@ -44,6 +44,73 @@ def find_icon_path() -> Path | None:
     return None
 
 
+def get_icon_for_shortcut() -> str | None:
+    """Get the icon path in the correct format for the current platform."""
+    import platform
+    import subprocess
+    import tempfile
+    
+    png_path = find_icon_path()
+    if not png_path or not png_path.exists():
+        return None
+    
+    if platform.system() == "Darwin":
+        # macOS needs .icns format - convert using sips
+        try:
+            # Create a temporary .icns file
+            icns_path = Path(tempfile.gettempdir()) / "bline_icon.icns"
+            
+            # First create an iconset directory
+            iconset_path = Path(tempfile.gettempdir()) / "bline.iconset"
+            iconset_path.mkdir(exist_ok=True)
+            
+            # Use sips to resize and create the required icon sizes
+            sizes = [16, 32, 64, 128, 256, 512]
+            for size in sizes:
+                output = iconset_path / f"icon_{size}x{size}.png"
+                subprocess.run(
+                    ["sips", "-z", str(size), str(size), str(png_path), "--out", str(output)],
+                    capture_output=True,
+                    check=True,
+                )
+                # Also create @2x versions for retina
+                if size <= 256:
+                    output_2x = iconset_path / f"icon_{size}x{size}@2x.png"
+                    size_2x = size * 2
+                    subprocess.run(
+                        ["sips", "-z", str(size_2x), str(size_2x), str(png_path), "--out", str(output_2x)],
+                        capture_output=True,
+                        check=True,
+                    )
+            
+            # Convert iconset to icns
+            subprocess.run(
+                ["iconutil", "-c", "icns", str(iconset_path), "-o", str(icns_path)],
+                capture_output=True,
+                check=True,
+            )
+            
+            # Clean up iconset
+            import shutil
+            shutil.rmtree(iconset_path, ignore_errors=True)
+            
+            if icns_path.exists():
+                return str(icns_path)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # If conversion fails, return None (pyshortcuts will use default)
+            pass
+        return None
+    
+    elif platform.system() == "Windows":
+        # Windows prefers .ico but can sometimes use .png
+        # For best results, we'd convert to .ico, but .png often works
+        return str(png_path)
+    
+    else:
+        # Linux uses .png
+        return str(png_path)
+
+
 def create_shortcut_dialog() -> int:
     """Show a dialog to create desktop/start menu shortcuts."""
     try:
@@ -80,12 +147,21 @@ def create_shortcut_dialog() -> int:
 
     layout.addSpacing(10)
 
-    # Checkboxes for shortcut locations
+    # Checkboxes for shortcut locations - platform-specific text
+    import platform
+    
     desktop_cb = QCheckBox("Desktop")
     desktop_cb.setChecked(True)
     layout.addWidget(desktop_cb)
 
-    startmenu_cb = QCheckBox("Start Menu (Windows) / Applications (macOS)")
+    if platform.system() == "Darwin":
+        startmenu_text = "~/Applications folder"
+    elif platform.system() == "Windows":
+        startmenu_text = "Start Menu"
+    else:
+        startmenu_text = "Applications menu"
+    
+    startmenu_cb = QCheckBox(startmenu_text)
     startmenu_cb.setChecked(True)
     layout.addWidget(startmenu_cb)
 
@@ -111,8 +187,8 @@ def create_shortcut_dialog() -> int:
             return
 
         try:
-            # Find the icon
-            icon = str(icon_path) if icon_path and icon_path.exists() else None
+            # Get the icon in the correct format for this platform
+            icon = get_icon_for_shortcut()
             
             # Create the shortcut
             make_shortcut(
@@ -129,13 +205,10 @@ def create_shortcut_dialog() -> int:
             if desktop_cb.isChecked():
                 locations.append("Desktop")
             if startmenu_cb.isChecked():
-                locations.append("Start Menu/Applications")
+                locations.append(startmenu_text)
             
-            QMessageBox.information(
-                dialog,
-                "Success",
-                f"Shortcut created in: {', '.join(locations)}"
-            )
+            message = f"Shortcut created in: {', '.join(locations)}"
+            QMessageBox.information(dialog, "Success", message)
             dialog.accept()
         except Exception as e:
             QMessageBox.critical(dialog, "Error", f"Failed to create shortcut:\n{e}")
