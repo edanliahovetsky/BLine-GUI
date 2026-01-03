@@ -431,15 +431,27 @@ def create_shortcut_dialog() -> int:
             else:
                 # Windows/Linux shortcut creation
                 if system == "Windows":
-                    # On Windows, create .lnk shortcuts directly. This avoids terminals and avoids PATH issues.
-                    python_exe = Path(sys.executable)
-                    pythonw_exe = python_exe.with_name("pythonw.exe")
-                    exe = str(pythonw_exe if pythonw_exe.exists() else python_exe)
-                    args = "-m main"
-
+                    # On Windows, create a VBS launcher that runs bline without a console window,
+                    # then point the .lnk shortcut at the VBS.
+                    
+                    # Ensure ~/.bline exists for our helper files
+                    bline_data_dir = Path.home() / ".bline"
+                    bline_data_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # Create a VBS wrapper that launches bline invisibly (no console flash)
+                    vbs_path = bline_data_dir / "launch_bline.vbs"
+                    vbs_content = f'''Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run """{bline_cmd}""", 0, False
+'''
+                    vbs_path.write_text(vbs_content, encoding="utf-8")
+                    
                     # Use known folders (handles OneDrive redirected Desktops, localization, etc.)
                     desktop_dir = get_windows_known_folder("Desktop")
                     startmenu_dir = get_windows_known_folder("Programs")
+
+                    # The shortcut targets wscript.exe running our VBS
+                    exe = "wscript.exe"
+                    args = f'"{vbs_path}"'
 
                     created_paths: list[str] = []
                     if desktop_cb.isChecked():
