@@ -1,6 +1,7 @@
 # Runtime
 PySide6>=6.6
 imageio>=2.0
+pyshortcuts>=1.9
 
 # Tooling / development
 black>=24.8.0

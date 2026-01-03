@@ -1,0 +1,4 @@
+include assets/*.png
+include assets/*.json
+recursive-include example_project *
+
