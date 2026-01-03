@@ -60,6 +60,17 @@ pipx ensurepath
 pipx install git+https://github.com/edanliahovetsky/BLine-GUI.git
 ```
 
+**If you get a PySide6 dependency/build error on Windows:** pipx is probably using a Python version that PySide6 doesn’t have wheels for on Windows yet. Install **Python 3.12** (recommended) or **3.11** from [python.org](https://www.python.org/downloads/windows/) and tell pipx to use it:
+
+```powershell
+# Use a specific Python for pipx (example: Python 3.12)
+py -3.12 -m pip install --upgrade pip pipx
+py -3.12 -m pipx ensurepath
+
+# Install using that Python
+py -3.12 -m pipx install git+https://github.com/edanliahovetsky/BLine-GUI.git
+```
+
 #### Option B: Using pip
 
 ```powershell
@@ -104,6 +115,12 @@ pipx ensurepath
 
 # Restart your terminal, then install BLine
 pipx install git+https://github.com/edanliahovetsky/BLine-GUI.git
+```
+
+**If you get a PySide6 dependency/build error on Linux:** make sure pipx is using a supported Python (recommended **3.12** or **3.11**). You can choose the interpreter explicitly:
+
+```bash
+pipx install --python python3.12 git+https://github.com/edanliahovetsky/BLine-GUI.git
 ```
 
 #### Option B: Using pip (No sudo required)
