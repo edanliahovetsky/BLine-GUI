@@ -64,10 +64,10 @@ plugins =
 macos.permissions = 
 
 # mode of using nuitka. accepts standalone or onefile. default = onefile
-mode = onefile
+mode = standalone
 
 # specify any extra nuitka arguments
-extra_args = --include-data-dir=assets=assets --disable-ccache --assume-yes-for-downloads --windows-disable-console
+extra_args = --include-data-dir=assets=assets --disable-ccache --assume-yes-for-downloads --windows-disable-console --company-name="FIRST Robotics" --product-name="BLine" --file-version="1.0.0" --product-version="1.0.0" --file-description="FRC Robot Path Planning Tool"
 
 [buildozer]
 
