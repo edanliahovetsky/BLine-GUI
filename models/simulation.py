@@ -1,3 +1,20 @@
+"""Path simulation engine for BLine-GUI.
+
+This module provides an idealistic kinematic simulation of path following. It is
+intended for visualization and initial path validation in the GUI, NOT as a
+substitute for real-world testing.
+
+Key characteristics:
+- Uses idealistic kinematics assuming instant drivetrain response to commanded velocities
+- Calculates desired speeds using a 2ad distance formula: v = sqrt(2 * a * remaining_distance)
+- Does NOT simulate the actual PID controller-based approach used by BLine-Lib on the robot
+- Applies acceleration rate limiting but assumes perfect velocity tracking
+
+For accurate path validation, use a physics simulation framework (e.g., WPILib simulation)
+or empirical testing on the actual robot. Empirical testing and rapid iteration is where
+BLine's simplicity shines.
+"""
+
 from __future__ import annotations
 
 import math
@@ -525,6 +542,26 @@ def simulate_path(
     config: Optional[Dict] = None,
     dt_s: float = 0.02,
 ) -> SimResult:
+    """Simulate robot motion along a path using idealistic kinematics.
+
+    This simulation uses a 2ad distance formula (v = sqrt(2 * a * d)) to compute
+    desired velocities based on remaining path distance. It assumes instant
+    drivetrain response and perfect velocity tracking, applying only acceleration
+    rate limiting as a constraint.
+
+    This is NOT equivalent to the PID-based path following in BLine-Lib. Use this
+    for initial visualization only; empirical testing on the robot is required
+    for path validation.
+
+    Args:
+        path: The Path object containing elements and constraints to simulate.
+        config: Optional dict with default constraint values (e.g., from project config).
+        dt_s: Simulation timestep in seconds (default 0.02s = 50Hz).
+
+    Returns:
+        SimResult containing poses indexed by time, sorted timestamps, total duration,
+        and trail points for visualization.
+    """
     cfg = config or {}
     segments, anchors, anchor_path_indices = _build_segments(path)
 
