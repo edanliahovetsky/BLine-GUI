@@ -24,6 +24,7 @@ Built in-house by FRC Team 2638 Rebel Robotics, by students for students, with d
   - [Simulation](#simulation)
 - [JSON Path Format](#json-path-format)
 - [Usage](#usage)
+- [Usage Tips](#usage-tips)
 - [Development](#development)
 - [License](#license)
 
@@ -422,6 +423,26 @@ pipx uninstall bline
 # If you used pip:
 # Just delete the BLine folder you created
 ```
+
+## Usage Tips
+
+### Recommended Constraint: Max Translational Velocity
+
+The max translational velocity constraint is the primary ranged constraint recommended for most use cases. It is the most effective method for counteracting overshoot at sharp turns—other than increasing the handoff radius, which reduces path precision. By limiting velocity before tight corners, the robot can decelerate in time and follow the intended path more accurately.
+
+### PID Tuning at Maximum Velocities
+
+When tuning the translation and rotation PID controllers, stress-test your controller gains at maximum robot velocity and acceleration for both translation and rotation.
+
+> ⚠️ **Warning:** If you limit max acceleration after tuning your controllers, or increase max allowable velocity beyond what was used during tuning, you will likely experience:
+> - Overshoot when reaching the path endpoint
+> - Unexpected behavior during path following
+>
+> Always tune your controllers within the full operating range of velocities and accelerations that your path constraints allow.
+
+### Single-Element Paths
+
+Paths can consist of just one Waypoint or TranslationTarget—useful for simple point-to-point moves where you just need to drive to a single location. Note that a path with only a RotationTarget is invalid (you need at least one translation element).
 
 ## Development
 
