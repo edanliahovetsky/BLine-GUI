@@ -2,13 +2,11 @@
 
 A visual path planning editor and simulator for FRC autonomous routines, built with PySide6.
 
-Check out **[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** for the Java library.
+☕ **[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** — the BLine Java library.
 
 ![BLine GUI Demo](assets/readme/gui_demo.gif)
 
 ![Robot Following BLine Path](assets/readme/cone-demo.gif)
-
----
 
 ## Table of Contents
 
@@ -26,8 +24,6 @@ Check out **[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** for the 
 - [Usage](#usage)
 - [Development](#development)
 
----
-
 ## Quick Start
 
 After installation, run from anywhere:
@@ -41,8 +37,6 @@ To create a shortcut with the BLine icon:
 ```bash
 bline --create-shortcut
 ```
-
----
 
 ## Installation
 
@@ -188,8 +182,6 @@ source .venv/bin/activate
 bline
 ```
 
----
-
 ## Core Concepts
 
 BLine represents autonomous paths as sequences of **path elements**. Understanding these elements is essential for effective path planning.
@@ -272,8 +264,6 @@ When you click on a ranged constraint's slider, a **green overlay** highlights t
 
 **Note on start ordinal behavior:** A ranged constraint that includes the starting element will affect all robot motion *leading into* that element. For example, if your robot doesn't begin at the first path element (e.g., it's placed mid-field), a velocity constraint starting at ordinal 1 will limit the robot's speed as it travels toward the first waypoint.
 
----
-
 ## GUI Overview
 
 ### Canvas
@@ -326,8 +316,6 @@ Transport controls at the bottom-left of the canvas:
 The orange trail shows the robot's simulated trajectory.
 
 > ⚠️ **Simulation Limitations:** The simulation uses idealistic kinematics and assumes the drivetrain responds instantly to commanded velocities. It calculates desired speeds using a 2ad distance formula (v = √(2 × acceleration × remaining_distance)) rather than simulating the actual PID controller-based approach used by BLine-Lib on the robot. This provides an initial visualization of your path, but for more accurate results, use a physics simulation framework like WPILib's. Ultimately, **empirical testing is the final verdict on path success**—and rapid iteration is where BLine shines.
-
----
 
 ## JSON Path Format
 
@@ -386,8 +374,6 @@ Paths are stored as JSON files in your project's `paths/` directory. The format 
 
 **Note:** The JSON uses 0-based ordinals while the GUI displays 1-based ordinals for user-friendliness.
 
----
-
 ## Usage
 
 ### Create a Desktop Shortcut
@@ -433,8 +419,6 @@ pipx uninstall bline
 # If you used pip:
 # Just delete the BLine folder you created
 ```
-
----
 
 ## Development
 
@@ -482,8 +466,6 @@ Common tasks are provided via the `Makefile`:
 
 Unit tests live under `tests/` and focus on the pure-Python logic in `models/` and `utils/`.
 GitHub Actions runs `ruff`, `black --check`, `mypy`, and `pytest` on every push and pull request.
-
----
 
 ## License
 
