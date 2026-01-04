@@ -13,6 +13,12 @@ After installation, run from anywhere:
 bline
 ```
 
+To create a shortcut with the BLine icon:
+
+```bash
+bline --create-shortcut
+```
+
 ## Installation
 
 ### Windows
