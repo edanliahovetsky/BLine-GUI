@@ -3,6 +3,8 @@ Check out **[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** for conc
 
 An editor and simulator for tuning BLine paths, built with PySide6.
 
+![BLine GUI Demo](assets/readme/gui_demo.gif)
+
 ## Quick start
 
 After installation, run from anywhere:
