@@ -22,6 +22,7 @@ hiddenimports = [
     'PySide6.QtWidgets',
     'imageio',
     'pyshortcuts',
+    'assets_rc',  # Qt resource file
 ]
 
 a = Analysis(
