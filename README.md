@@ -12,8 +12,8 @@ Built in-house by FRC Team 2638 Rebel Robotics, by students for students, with d
 
 ## Table of Contents
 
-- [Quick Start](#quick-start)
 - [Installation](#installation)
+- [Quick Start](#quick-start)
 - [Core Concepts](#core-concepts)
   - [Path Elements](#path-elements)
   - [Path Constraints](#path-constraints)
@@ -25,20 +25,7 @@ Built in-house by FRC Team 2638 Rebel Robotics, by students for students, with d
 - [JSON Path Format](#json-path-format)
 - [Usage](#usage)
 - [Development](#development)
-
-## Quick Start
-
-After installation, run from anywhere:
-
-```bash
-bline
-```
-
-To create a shortcut with the BLine icon:
-
-```bash
-bline --create-shortcut
-```
+- [License](#license)
 
 ## Installation
 
@@ -182,6 +169,20 @@ To run BLine later with this method:
 cd ~/Applications/BLine
 source .venv/bin/activate
 bline
+```
+
+## Quick Start
+
+After installation, run from anywhere:
+
+```bash
+bline
+```
+
+To create a shortcut with the BLine icon:
+
+```bash
+bline --create-shortcut
 ```
 
 ## Core Concepts
