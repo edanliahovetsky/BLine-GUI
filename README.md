@@ -2,7 +2,7 @@
 
 BLine is a path generation and tracking suite designed for the FIRST Robotics Competition (FRC). It is built around the concept of offering simplicity and performance in time-constrained environments where quick iteration and rapid empirical testing prove advantageous.
 
-Developed in-house by FRC Team 2638 Rebel Robotics, by students for students, with development beginning in late June of 2025, BLine plays into the recent emergence of the FRC polyline path planning meta, with renowned teams such as 2056 and 2910 (among others) running their own solutions during the 2025 Reefscape game.
+Built in-house by FRC Team 2638 Rebel Robotics, by students for students, with development beginning in late June of 2025, BLine plays into the recent emergence of the FRC polyline path planning meta, with renowned teams such as 2056 and 2910 (among others) running their own solutions during the 2025 Reefscape game.
 
 ☕ **[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** — the BLine Java library.
 
