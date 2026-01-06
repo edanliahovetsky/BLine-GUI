@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=BLine
+Comment=FRC Robot Path Planning Tool
+Exec=bline
+Icon=bline
+Type=Application
+Categories=Development;Engineering;Robotics;
+Terminal=false
+StartupWMClass=bline

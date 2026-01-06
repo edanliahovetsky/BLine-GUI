@@ -50,21 +50,21 @@ def get_icon_for_shortcut() -> str | None:
     import platform
     import subprocess
     import tempfile
-    
+
     png_path = find_icon_path()
     if not png_path or not png_path.exists():
         return None
-    
+
     if platform.system() == "Darwin":
         # macOS needs .icns format - convert using sips
         try:
             # Create a temporary .icns file
             icns_path = Path(tempfile.gettempdir()) / "bline_icon.icns"
-            
+
             # First create an iconset directory
             iconset_path = Path(tempfile.gettempdir()) / "bline.iconset"
             iconset_path.mkdir(exist_ok=True)
-            
+
             # Use sips to resize and create the required icon sizes
             sizes = [16, 32, 64, 128, 256, 512]
             for size in sizes:
@@ -79,29 +79,38 @@ def get_icon_for_shortcut() -> str | None:
                     output_2x = iconset_path / f"icon_{size}x{size}@2x.png"
                     size_2x = size * 2
                     subprocess.run(
-                        ["sips", "-z", str(size_2x), str(size_2x), str(png_path), "--out", str(output_2x)],
+                        [
+                            "sips",
+                            "-z",
+                            str(size_2x),
+                            str(size_2x),
+                            str(png_path),
+                            "--out",
+                            str(output_2x),
+                        ],
                         capture_output=True,
                         check=True,
                     )
-            
+
             # Convert iconset to icns
             subprocess.run(
                 ["iconutil", "-c", "icns", str(iconset_path), "-o", str(icns_path)],
                 capture_output=True,
                 check=True,
             )
-            
+
             # Clean up iconset
             import shutil
+
             shutil.rmtree(iconset_path, ignore_errors=True)
-            
+
             if icns_path.exists():
                 return str(icns_path)
         except (subprocess.CalledProcessError, FileNotFoundError):
             # If conversion fails, return None (pyshortcuts will use default)
             pass
         return None
-    
+
     elif platform.system() == "Windows":
         # Windows shortcuts generally want an .ico for reliable display.
         try:
@@ -116,14 +125,19 @@ def get_icon_for_shortcut() -> str | None:
             if img.isNull():
                 return None
             # Prefer a 256x256 icon if available; Qt will scale as needed.
-            img = img.scaled(256, 256, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            img = img.scaled(
+                256,
+                256,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
             if img.save(str(ico_path), "ICO") and ico_path.exists():
                 return str(ico_path)
         except Exception:
             pass
         # Fallback to PNG path.
         return str(png_path)
-    
+
     else:
         # Linux uses .png
         return str(png_path)
@@ -169,9 +183,7 @@ def create_macos_app_bundle(
     # Launcher script
     launcher = macos_dir / app_name
     launcher.write_text(
-        "#!/bin/sh\n"
-        "set -e\n"
-        f"exec {launch_cmd} \"$@\"\n",
+        f'#!/bin/sh\nset -e\nexec {launch_cmd} "$@"\n',
         encoding="utf-8",
     )
     os.chmod(launcher, 0o755)
@@ -313,7 +325,7 @@ def create_shortcut_dialog() -> int:
         return 1
 
     app = QApplication.instance() or QApplication(sys.argv)
-    
+
     # Apply dark theme for consistency
     set_dark_theme(cast(QApplication, app))
 
@@ -331,7 +343,7 @@ def create_shortcut_dialog() -> int:
         pixmap = QPixmap(str(icon_path)).scaled(48, 48, Qt.AspectRatioMode.KeepAspectRatio)
         icon_label.setPixmap(pixmap)
         header_layout.addWidget(icon_label)
-    
+
     title_label = QLabel("Create BLine Shortcut")
     title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
     header_layout.addWidget(title_label)
@@ -373,7 +385,7 @@ def create_shortcut_dialog() -> int:
     # Buttons
     button_layout = QHBoxLayout()
     button_layout.addStretch()
-    
+
     cancel_btn = QPushButton("Cancel")
     cancel_btn.clicked.connect(dialog.reject)
     button_layout.addWidget(cancel_btn)
@@ -381,7 +393,7 @@ def create_shortcut_dialog() -> int:
     create_btn = QPushButton("Create Shortcut")
     create_btn.setDefault(True)
     button_layout.addWidget(create_btn)
-    
+
     layout.addLayout(button_layout)
 
     def on_create():
@@ -396,7 +408,7 @@ def create_shortcut_dialog() -> int:
                 QMessageBox.critical(
                     dialog,
                     "Not Installed",
-                    "BLine is not installed. Please install with:\n\npipx install bline"
+                    "BLine is not installed. Please install with:\n\npipx install bline",
                 )
                 return
 
@@ -405,7 +417,7 @@ def create_shortcut_dialog() -> int:
             # macOS: pyshortcuts only creates Desktop .app bundles and does not support "Start Menu/Applications".
             # Create real .app bundles ourselves for Desktop and/or ~/Applications.
             if system == "Darwin":
-                launch_cmd = f"\"{bline_cmd}\""
+                launch_cmd = f'"{bline_cmd}"'
                 if desktop_cb.isChecked():
                     create_macos_app_bundle(
                         app_dir=Path.home() / "Desktop",
@@ -433,18 +445,18 @@ def create_shortcut_dialog() -> int:
                 if system == "Windows":
                     # On Windows, create a VBS launcher that runs bline without a console window,
                     # then point the .lnk shortcut at the VBS.
-                    
+
                     # Ensure ~/.bline exists for our helper files
                     bline_data_dir = Path.home() / ".bline"
                     bline_data_dir.mkdir(parents=True, exist_ok=True)
-                    
+
                     # Create a VBS wrapper that launches bline invisibly (no console flash)
                     vbs_path = bline_data_dir / "launch_bline.vbs"
                     vbs_content = f'''Set WshShell = CreateObject("WScript.Shell")
 WshShell.Run """{bline_cmd}""", 0, False
 '''
                     vbs_path.write_text(vbs_content, encoding="utf-8")
-                    
+
                     # Use known folders (handles OneDrive redirected Desktops, localization, etc.)
                     desktop_dir = get_windows_known_folder("Desktop")
                     startmenu_dir = get_windows_known_folder("Programs")
@@ -485,13 +497,13 @@ WshShell.Run """{bline_cmd}""", 0, False
                         startmenu=startmenu_checked,
                         terminal=False,
                     )
-            
+
             locations = []
             if desktop_cb.isChecked():
                 locations.append("Desktop")
             if startmenu_checked and startmenu_text:
                 locations.append(startmenu_text)
-            
+
             message = f"Shortcut created in: {', '.join(locations)}"
             if system == "Windows":
                 # Show exact file paths so users can verify where it went.
@@ -575,20 +587,19 @@ def run_app(argv: Sequence[str] | None = None) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="bline",
-        description="BLine - FRC Robot Path Planning Tool"
+        prog="bline", description="BLine - FRC Robot Path Planning Tool"
     )
     parser.add_argument(
         "--create-shortcut",
         action="store_true",
-        help="Create a desktop/start menu shortcut for BLine"
+        help="Create a desktop/start menu shortcut for BLine",
     )
-    
+
     args, remaining = parser.parse_known_args(argv)
-    
+
     if args.create_shortcut:
         return create_shortcut_dialog()
-    
+
     return run_app(remaining if remaining else None)
 
 

@@ -609,10 +609,10 @@ def simulate_path(
         """Calculate remaining path distance by summing actual distances to each subsequent target."""
         if seg_index >= len(segments):
             return 0.0
-        
+
         remaining_distance = 0.0
         prev_x, prev_y = current_x, current_y  # Start from current position
-        
+
         # Iterate through all remaining segments and sum distances to each endpoint
         for k in range(seg_index, len(segments)):
             seg = segments[k]
@@ -620,7 +620,7 @@ def simulate_path(
             remaining_distance += hypot2(seg.bx - prev_x, seg.by - prev_y)
             # Update previous point to end of this segment
             prev_x, prev_y = seg.bx, seg.by
-        
+
         return remaining_distance
 
     # Compute a realistic guard time using the slowest effective speed limits (including ranged constraints)
