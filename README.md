@@ -6,6 +6,8 @@ Built in-house by FRC Team 2638 Rebel Robotics, by students for students, with d
 
 ☕ **[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** — the BLine Java library.
 
+💬 **[Chief Delphi Thread](https://www.chiefdelphi.com/t/introducing-bline-a-new-rapid-polyline-autonomous-path-planning-suite/509778)** — discussion, feedback, and announcements.
+
 ![BLine GUI Demo](assets/readme/gui_demo.gif)
 
 ![Robot Following BLine Path](assets/readme/cone-demo.gif)
@@ -30,50 +32,30 @@ Built in-house by FRC Team 2638 Rebel Robotics, by students for students, with d
 
 ## Installation
 
-### Prebuilt Binaries (Recommended)
+### Quick Install (Recommended)
 
-Download the latest release for your platform from the [**Releases page**](https://github.com/edanliahovetsky/BLine-GUI/releases/latest).
+The recommended way to install BLine is via `pipx`, which installs it in an isolated environment with a single command:
 
-#### Windows
+```bash
+pipx install git+https://github.com/edanliahovetsky/BLine-GUI.git
+```
 
-Choose one of the following:
+Then run from anywhere:
 
-**Installer (Recommended)**
-1. Download `BLine-{version}-Setup.exe`
-2. Run the installer and follow the wizard
-3. Launch BLine from the Start Menu
+```bash
+bline
+```
 
-**Portable (No Installation)**
-1. Download `BLine-{version}-Windows-Portable.zip`
-2. Extract anywhere
-3. Run `BLine.exe`
-
-No Python installation required—everything is bundled!
-
-#### Linux
-
-**AppImage (All Distributions)**
-1. Download `BLine-x86_64.AppImage`
-2. Make it executable:
-   ```bash
-   chmod +x BLine-x86_64.AppImage
-   ```
-3. Run it:
-   ```bash
-   ./BLine-x86_64.AppImage
-   ```
-
-No installation or dependencies required!
-
-#### macOS
-
-macOS builds are not currently available as prebuilt binaries. See [Install from Source](#install-from-source) below.
+**Don't have pipx?** Install it first:
+- **Windows:** `pip install pipx && pipx ensurepath` (restart terminal after)
+- **macOS:** `brew install pipx && pipx ensurepath`
+- **Linux:** `sudo apt install pipx && pipx ensurepath` (or use your distro's package manager)
 
 ---
 
-### Install from Source
+### Platform-Specific Instructions
 
-If you prefer to build from source or need the latest development version:
+For detailed installation steps, troubleshooting, or alternative methods:
 
 <details>
 <summary><strong>Windows</strong></summary>
@@ -190,6 +172,46 @@ pip install git+https://github.com/edanliahovetsky/BLine-GUI.git
 # Run BLine
 bline
 ```
+
+</details>
+
+---
+
+### Prebuilt Binaries (Experimental)
+
+> ⚠️ **Antivirus Warning:** Prebuilt binaries may trigger false-positive antivirus warnings. This is a [known issue](https://github.com/pyinstaller/pyinstaller/issues/5932) with PyInstaller-packaged applications—the binaries are safe, but AV software sometimes flags the packaging method. You may need to whitelist the executable or temporarily disable your AV to run it. **If this concerns you, use the [recommended pipx installation](#quick-install-recommended) instead.**
+
+Download binaries from the [**Releases page**](https://github.com/edanliahovetsky/BLine-GUI/releases/latest):
+
+<details>
+<summary><strong>Windows</strong></summary>
+
+**Installer**
+1. Download `BLine-{version}-Setup.exe`
+2. Run the installer and follow the wizard
+3. Launch BLine from the Start Menu
+
+**Portable (No Installation)**
+1. Download `BLine-{version}-Windows-Portable.zip`
+2. Extract anywhere
+3. Run `BLine.exe`
+
+</details>
+
+<details>
+<summary><strong>Linux</strong></summary>
+
+**AppImage (All Distributions)**
+1. Download `BLine-x86_64.AppImage`
+2. Make it executable: `chmod +x BLine-x86_64.AppImage`
+3. Run it: `./BLine-x86_64.AppImage`
+
+</details>
+
+<details>
+<summary><strong>macOS</strong></summary>
+
+macOS builds are not currently available. Use the [pipx installation](#quick-install-recommended) instead.
 
 </details>
 
