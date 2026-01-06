@@ -32,30 +32,59 @@ Built in-house by FRC Team 2638 Rebel Robotics, by students for students, with d
 
 ## Installation
 
-### Quick Install (Recommended)
+### Prebuilt Binaries (Recommended)
 
-The recommended way to install BLine is via `pipx`, which installs it in an isolated environment with a single command:
+Download the latest release for your platform from the [**Releases page**](https://github.com/edanliahovetsky/BLine-GUI/releases/latest).
 
+> ⚠️ **Antivirus Note:** Some third-party antivirus software (Bitdefender, Norton, Avast, AVG, Kaspersky) may flag the binaries as false positives—this is a [known issue](https://github.com/pyinstaller/pyinstaller/issues/5932) with PyInstaller-packaged applications. The binaries are completely safe and pass **Windows Defender** and **macOS Gatekeeper** without issues. If your AV flags the download, you can whitelist the executable or use the [Python package installation](#install-from-source) instead.
+
+#### Windows
+
+Choose one of the following:
+
+**Installer (Recommended)**
+1. Download `BLine-{version}-Setup.exe`
+2. Run the installer and follow the wizard
+3. Launch BLine from the Start Menu
+
+**Portable (No Installation)**
+1. Download `BLine-{version}-Windows-Portable.zip`
+2. Extract anywhere
+3. Run `BLine.exe`
+
+No Python installation required—everything is bundled!
+
+#### Linux
+
+**AppImage (All Distributions)**
+1. Download `BLine-x86_64.AppImage`
+2. Make it executable:
+   ```bash
+   chmod +x BLine-x86_64.AppImage
+   ```
+3. Run it:
+   ```bash
+   ./BLine-x86_64.AppImage
+   ```
+
+No installation or dependencies required!
+
+#### macOS
+
+macOS builds are not currently available as prebuilt binaries. See [Install from Source](#install-from-source) below.
+
+---
+
+### Install from Source
+
+If you prefer to install via Python package or need the latest development version:
+
+**Quick Install (all platforms):**
 ```bash
 pipx install git+https://github.com/edanliahovetsky/BLine-GUI.git
 ```
 
-Then run from anywhere:
-
-```bash
-bline
-```
-
-**Don't have pipx?** Install it first:
-- **Windows:** `pip install pipx && pipx ensurepath` (restart terminal after)
-- **macOS:** `brew install pipx && pipx ensurepath`
-- **Linux:** `sudo apt install pipx && pipx ensurepath` (or use your distro's package manager)
-
----
-
-### Platform-Specific Instructions
-
-For detailed installation steps, troubleshooting, or alternative methods:
+Then run `bline` from anywhere. Don't have pipx? See platform-specific instructions below.
 
 <details>
 <summary><strong>Windows</strong></summary>
@@ -172,46 +201,6 @@ pip install git+https://github.com/edanliahovetsky/BLine-GUI.git
 # Run BLine
 bline
 ```
-
-</details>
-
----
-
-### Prebuilt Binaries (Experimental)
-
-> ⚠️ **Antivirus Warning:** Prebuilt binaries may trigger false-positive antivirus warnings. This is a [known issue](https://github.com/pyinstaller/pyinstaller/issues/5932) with PyInstaller-packaged applications—the binaries are safe, but AV software sometimes flags the packaging method. You may need to whitelist the executable or temporarily disable your AV to run it. **If this concerns you, use the [recommended pipx installation](#quick-install-recommended) instead.**
-
-Download binaries from the [**Releases page**](https://github.com/edanliahovetsky/BLine-GUI/releases/latest):
-
-<details>
-<summary><strong>Windows</strong></summary>
-
-**Installer**
-1. Download `BLine-{version}-Setup.exe`
-2. Run the installer and follow the wizard
-3. Launch BLine from the Start Menu
-
-**Portable (No Installation)**
-1. Download `BLine-{version}-Windows-Portable.zip`
-2. Extract anywhere
-3. Run `BLine.exe`
-
-</details>
-
-<details>
-<summary><strong>Linux</strong></summary>
-
-**AppImage (All Distributions)**
-1. Download `BLine-x86_64.AppImage`
-2. Make it executable: `chmod +x BLine-x86_64.AppImage`
-3. Run it: `./BLine-x86_64.AppImage`
-
-</details>
-
-<details>
-<summary><strong>macOS</strong></summary>
-
-macOS builds are not currently available. Use the [pipx installation](#quick-install-recommended) instead.
 
 </details>
 
