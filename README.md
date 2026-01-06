@@ -36,8 +36,6 @@ Built in-house by FRC Team 2638 Rebel Robotics, by students for students, with d
 
 Download the latest release for your platform from the [**Releases page**](https://github.com/edanliahovetsky/BLine-GUI/releases/latest).
 
-> ⚠️ **Antivirus Note:** Some third-party antivirus software (Bitdefender, Norton, Avast, AVG, Kaspersky) may flag the binaries as false positives—this is a [known issue](https://github.com/pyinstaller/pyinstaller/issues/5932) with PyInstaller-packaged applications. The binaries are completely safe and pass **Windows Defender** and **macOS Gatekeeper** without issues. If your AV flags the download, you can whitelist the executable or use the [Python package installation](#install-from-source) instead.
-
 #### Windows
 
 Choose one of the following:
