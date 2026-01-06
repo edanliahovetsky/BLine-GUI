@@ -206,17 +206,9 @@ bline
 
 ## Quick Start
 
-After installation, run from anywhere:
+**Binary installation:** Launch BLine from your Start Menu (Windows), Applications folder, or run the executable directly.
 
-```bash
-bline
-```
-
-To create a shortcut with the BLine icon:
-
-```bash
-bline --create-shortcut
-```
+**Python package installation:** Run `bline` from any terminal. To create a desktop shortcut with the BLine icon, run `bline --create-shortcut`.
 
 ## Core Concepts
 
