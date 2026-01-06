@@ -375,10 +375,10 @@ class MainWindow(WindowEventMixin, QMainWindow):
     def _apply_robot_dims_from_config(self, cfg):
         try:
             # Support both ProjectConfig dataclass and dict
-            if hasattr(cfg, 'robot_length_meters'):
+            if hasattr(cfg, "robot_length_meters"):
                 length_m = float(cfg.robot_length_meters or 0.60)
                 width_m = float(cfg.robot_width_meters or 0.60)
-            elif hasattr(cfg, 'get'):
+            elif hasattr(cfg, "get"):
                 length_m = float(cfg.get("robot_length_meters", 0.60) or 0.60)
                 width_m = float(cfg.get("robot_width_meters", 0.60) or 0.60)
             else:

@@ -30,9 +30,55 @@ Built in-house by FRC Team 2638 Rebel Robotics, by students for students, with d
 
 ## Installation
 
-### Windows
+### Prebuilt Binaries (Recommended)
 
-#### Option A: Using pipx (Recommended)
+Download the latest release for your platform from the [**Releases page**](https://github.com/edanliahovetsky/BLine-GUI/releases/latest).
+
+#### Windows
+
+Choose one of the following:
+
+**Installer (Recommended)**
+1. Download `BLine-{version}-Setup.exe`
+2. Run the installer and follow the wizard
+3. Launch BLine from the Start Menu
+
+**Portable (No Installation)**
+1. Download `BLine-{version}-Windows-Portable.zip`
+2. Extract anywhere
+3. Run `BLine.exe`
+
+No Python installation required—everything is bundled!
+
+#### Linux
+
+**AppImage (All Distributions)**
+1. Download `BLine-x86_64.AppImage`
+2. Make it executable:
+   ```bash
+   chmod +x BLine-x86_64.AppImage
+   ```
+3. Run it:
+   ```bash
+   ./BLine-x86_64.AppImage
+   ```
+
+No installation or dependencies required!
+
+#### macOS
+
+macOS builds are not currently available as prebuilt binaries. See [Install from Source](#install-from-source) below.
+
+---
+
+### Install from Source
+
+If you prefer to build from source or need the latest development version:
+
+<details>
+<summary><strong>Windows</strong></summary>
+
+#### Using pipx (Recommended)
 
 ```powershell
 # Install pipx (one-time setup)
@@ -43,20 +89,15 @@ pipx ensurepath
 pipx install git+https://github.com/edanliahovetsky/BLine-GUI.git
 ```
 
-If you see an extra terminal window when launching BLine from a shortcut, reinstall after updating (newer builds install a GUI launcher on Windows).
-
-**If you get a PySide6 dependency/build error on Windows:** pipx is probably using a Python version that PySide6 doesn't have wheels for on Windows yet. Install **Python 3.12** (recommended) or **3.11** from [python.org](https://www.python.org/downloads/windows/) and tell pipx to use it:
+**Troubleshooting:** If you get a PySide6 build error, install Python 3.11 or 3.12 from [python.org](https://www.python.org/downloads/windows/) and specify it:
 
 ```powershell
-# Use a specific Python for pipx (example: Python 3.12)
 py -3.12 -m pip install --upgrade pip pipx
 py -3.12 -m pipx ensurepath
-
-# Install using that Python
 py -3.12 -m pipx install git+https://github.com/edanliahovetsky/BLine-GUI.git
 ```
 
-#### Option B: Using pip
+#### Using pip
 
 ```powershell
 # Create a folder for BLine
@@ -72,84 +113,24 @@ pip install git+https://github.com/edanliahovetsky/BLine-GUI.git
 bline
 ```
 
-To run BLine later with this method:
-```powershell
-cd %USERPROFILE%\BLine
-.venv\Scripts\activate
-bline
-```
-### macOS
+</details>
 
-#### Option A: Using Homebrew (Recommended)
+<details>
+<summary><strong>macOS</strong></summary>
 
-If you don't have Homebrew, install it first:
+#### Using Homebrew (Recommended)
+
 ```bash
+# Install Homebrew if needed
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
 
-Then install BLine:
-```bash
-# Install pipx (one-time setup)
+# Install pipx and BLine
 brew install pipx
 pipx ensurepath
-
-# Restart your terminal, then install BLine
 pipx install git+https://github.com/edanliahovetsky/BLine-GUI.git
 ```
 
-#### Option B: Using pip (No Homebrew)
-
-```bash
-# Create a folder for BLine
-mkdir -p ~/Applications/BLine
-cd ~/Applications/BLine
-
-# Create a virtual environment and install
-python3 -m venv .venv
-source .venv/bin/activate
-pip install git+https://github.com/edanliahovetsky/BLine-GUI.git
-
-# Run BLine (from this folder, with venv activated)
-bline
-```
-
-To run BLine later with this method:
-```bash
-cd ~/Applications/BLine
-source .venv/bin/activate
-bline
-```
-
-### Linux
-
-#### Option A: Using pipx (Recommended)
-
-```bash
-# Debian/Ubuntu
-sudo apt install pipx
-
-# Fedora
-sudo dnf install pipx
-
-# Arch
-sudo pacman -S python-pipx
-```
-
-Then:
-```bash
-pipx ensurepath
-
-# Restart your terminal, then install BLine
-pipx install git+https://github.com/edanliahovetsky/BLine-GUI.git
-```
-
-**If you get a PySide6 dependency/build error on Linux:** make sure pipx is using a supported Python (recommended **3.12** or **3.11**). You can choose the interpreter explicitly:
-
-```bash
-pipx install --python python3.12 git+https://github.com/edanliahovetsky/BLine-GUI.git
-```
-
-#### Option B: Using pip (No sudo required)
+#### Using pip
 
 ```bash
 # Create a folder for BLine
@@ -165,12 +146,52 @@ pip install git+https://github.com/edanliahovetsky/BLine-GUI.git
 bline
 ```
 
-To run BLine later with this method:
+</details>
+
+<details>
+<summary><strong>Linux</strong></summary>
+
+#### Using pipx (Recommended)
+
 ```bash
+# Install pipx
+# Debian/Ubuntu:
+sudo apt install pipx
+
+# Fedora:
+sudo dnf install pipx
+
+# Arch:
+sudo pacman -S python-pipx
+
+# Install BLine
+pipx ensurepath
+pipx install git+https://github.com/edanliahovetsky/BLine-GUI.git
+```
+
+**Troubleshooting:** If you get a PySide6 build error, specify Python 3.11 or 3.12:
+
+```bash
+pipx install --python python3.12 git+https://github.com/edanliahovetsky/BLine-GUI.git
+```
+
+#### Using pip
+
+```bash
+# Create a folder for BLine
+mkdir -p ~/Applications/BLine
 cd ~/Applications/BLine
+
+# Create a virtual environment and install
+python3 -m venv .venv
 source .venv/bin/activate
+pip install git+https://github.com/edanliahovetsky/BLine-GUI.git
+
+# Run BLine
 bline
 ```
+
+</details>
 
 ## Quick Start
 
