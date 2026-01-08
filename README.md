@@ -1,8 +1,8 @@
 # BLine-GUI
 
-**BLine** is an open-source path generation and tracking suite designed for **holonomic drivetrains** (swerve, mecanum, etc.). It's built around simplicity and performance in time-constrained environments where quick iteration and rapid empirical testing prove advantageous.
+**BLine** is an open-source path generation and tracking suite designed for **holonomic drivetrains** (swerve, mecanum, etc.) made by students for students. It's built around simplicity and performance in time-constrained environments where quick iteration and rapid empirical testing prove advantageous.
 
-Built in-house by FRC Team 2638 Rebel Robotics, by students for students. BLine offers the advantages of simplicity, easy tunability, and excellent real time performance while performing at a the same (or potentially better) level as other autonomous solutions. 
+BLine offers the advantages of simplicity, easy tunability, and excellent real time performance while performing at a the same (or potentially better) level as other autonomous solutions. 
 
 ☕ **[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** — the BLine Java library.
 
