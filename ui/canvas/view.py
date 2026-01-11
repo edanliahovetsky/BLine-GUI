@@ -26,6 +26,7 @@ from models.simulation import simulate_path, SimResult
 from .constants import (
     FIELD_LENGTH_METERS,
     FIELD_WIDTH_METERS,
+    FIELD_OFFSET_M,
     CONNECT_LINE_THICKNESS_M,
     HANDLE_DISTANCE_M,
     HANDLE_RADIUS_M,
@@ -103,6 +104,7 @@ class CanvasView(QGraphicsView):
         self._pan_start: Optional[QPoint] = None
         self.robot_length_m = ELEMENT_RECT_WIDTH_M
         self.robot_width_m = ELEMENT_RECT_HEIGHT_M
+        self._field_offset: float = FIELD_OFFSET_M  # 0.5m for 2026
         self.graphics_scene = QGraphicsScene(self)
         self.setScene(self.graphics_scene)
         self.graphics_scene.setSceneRect(0, 0, FIELD_LENGTH_METERS, FIELD_WIDTH_METERS)
@@ -111,7 +113,7 @@ class CanvasView(QGraphicsView):
         self._items: List[Tuple[str, RectElementItem, Optional[RotationHandle]]] = []
         self._connect_lines: List[QGraphicsLineItem] = []
         self._handoff_visualizers: List[Optional[HandoffRadiusVisualizer]] = []
-        self._load_field_background(":/assets/field25.png")
+        self._load_field_background(":/assets/field26.png")
         # Simulation state
         self._sim_result: Optional[SimResult] = None
         self._sim_poses_by_time: dict[float, tuple[float, float, float]] = {}
@@ -628,10 +630,18 @@ class CanvasView(QGraphicsView):
 
     # -------- Coordinate conversion --------
     def _scene_from_model(self, x_m: float, y_m: float) -> QPointF:
-        return QPointF(x_m, FIELD_WIDTH_METERS - y_m)
+        """Convert model coordinates to scene coordinates.
+        
+        For 2026 field, adds FIELD_OFFSET_M (0.5m) to account for image margin.
+        """
+        return QPointF(x_m + self._field_offset, FIELD_WIDTH_METERS - y_m - self._field_offset)
 
     def _model_from_scene(self, x_s: float, y_s: float) -> Tuple[float, float]:
-        return float(x_s), float(FIELD_WIDTH_METERS - y_s)
+        """Convert scene coordinates to model coordinates.
+        
+        For 2026 field, subtracts FIELD_OFFSET_M (0.5m) to account for image margin.
+        """
+        return float(x_s - self._field_offset), float(FIELD_WIDTH_METERS - y_s - self._field_offset)
 
     def _clamp_scene_coords(self, x_s: float, y_s: float) -> Tuple[float, float]:
         return max(0.0, min(x_s, FIELD_LENGTH_METERS)), max(0.0, min(y_s, FIELD_WIDTH_METERS))

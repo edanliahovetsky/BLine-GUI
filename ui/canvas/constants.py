@@ -5,8 +5,15 @@ from PySide6.QtGui import QPen, QColor
 
 from ui.qt_compat import Qt
 
-FIELD_LENGTH_METERS = 17.55
-FIELD_WIDTH_METERS = 8.05
+# Field image conversion factors for field26.png:
+# With robot center at bottom-left corner bordering margins = (0,0) meters:
+# meters_x = (((pixels_x - 48) / scale) / 200.0) - 0.5
+# meters_y = ((image_height - ((pixels_y - 48) / scale)) / 200.0) - 0.5
+FIELD_PPM = 200.0  # pixels per meter
+FIELD_OFFSET_M = 0.5  # meter offset for coordinate origin
+
+FIELD_LENGTH_METERS = 17.54
+FIELD_WIDTH_METERS = 9.07
 
 # Element visual constants (in meters)
 ELEMENT_RECT_WIDTH_M = 0.60
