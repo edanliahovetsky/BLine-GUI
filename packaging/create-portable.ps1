@@ -12,7 +12,18 @@ Write-Host ""
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Split-Path -Parent $ScriptDir
 $DistDir = Join-Path $ScriptDir "dist\BLine"
-$Version = "0.1.3"
+
+# Get version from pyproject.toml
+$PyProjectPath = Join-Path $ProjectDir "pyproject.toml"
+$PyProjectContent = Get-Content $PyProjectPath -Raw
+if ($PyProjectContent -match 'version\s*=\s*"([^"]+)"') {
+    $Version = $matches[1]
+    Write-Host "Detected version: $Version" -ForegroundColor Green
+} else {
+    Write-Host "Warning: Could not parse version from pyproject.toml, using default" -ForegroundColor Yellow
+    $Version = "0.0.0"
+}
+
 $ZipName = "BLine-${Version}-Windows-Portable.zip"
 $ZipPath = Join-Path $ProjectDir $ZipName
 

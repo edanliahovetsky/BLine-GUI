@@ -2,7 +2,10 @@
 ; Creates a professional Windows installer for BLine
 
 #define MyAppName "BLine"
-#define MyAppVersion "0.1.3"
+; Version can be overridden via command line: ISCC /DMyAppVersion=x.y.z installer.iss
+#ifndef MyAppVersion
+  #define MyAppVersion "0.0.0"
+#endif
 #define MyAppPublisher "FRC Team 2638 Rebel Robotics"
 #define MyAppURL "https://github.com/edanliahovetsky/BLine-GUI"
 #define MyAppExeName "BLine.exe"

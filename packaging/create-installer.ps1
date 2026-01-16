@@ -10,7 +10,19 @@ Write-Host ""
 
 # Get script directory
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectDir = Split-Path -Parent $ScriptDir
 $DistDir = Join-Path $ScriptDir "dist\BLine"
+
+# Get version from pyproject.toml
+$PyProjectPath = Join-Path $ProjectDir "pyproject.toml"
+$PyProjectContent = Get-Content $PyProjectPath -Raw
+if ($PyProjectContent -match 'version\s*=\s*"([^"]+)"') {
+    $Version = $matches[1]
+    Write-Host "Detected version: $Version" -ForegroundColor Green
+} else {
+    Write-Host "Warning: Could not parse version from pyproject.toml, using default" -ForegroundColor Yellow
+    $Version = "0.0.0"
+}
 
 # Check if build exists
 if (-not (Test-Path $DistDir)) {
@@ -49,11 +61,11 @@ if (-not $ISCC) {
 Write-Host "Found Inno Setup: $ISCC" -ForegroundColor Green
 Write-Host ""
 
-# Compile installer
-Write-Host "Compiling installer..." -ForegroundColor Yellow
+# Compile installer with version passed as preprocessor definition
+Write-Host "Compiling installer for version $Version..." -ForegroundColor Yellow
 Set-Location $ScriptDir
 
-& $ISCC "installer.iss"
+& $ISCC "/DMyAppVersion=$Version" "installer.iss"
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
