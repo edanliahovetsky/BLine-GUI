@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bline"
-version = "0.1.6"
+version = "0.2.0"
 description = "A PySide6 GUI for planning and simulating FRC robot paths."
 readme = "README.md"
 requires-python = ">=3.11"

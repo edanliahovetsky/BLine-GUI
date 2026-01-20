@@ -208,8 +208,8 @@ def create_macos_app_bundle(
         "    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>",
         "    <key>CFBundleName</key><string>%s</string>" % app_name,
         "    <key>CFBundlePackageType</key><string>APPL</string>",
-        "    <key>CFBundleShortVersionString</key><string>0.1.0</string>",
-        "    <key>CFBundleVersion</key><string>0.1.0</string>",
+        "    <key>CFBundleShortVersionString</key><string>0.2.0</string>",
+        "    <key>CFBundleVersion</key><string>0.2.0</string>",
     ]
     if icon_file:
         plist_lines.append("    <key>CFBundleIconFile</key><string>%s</string>" % icon_file)
