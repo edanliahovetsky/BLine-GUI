@@ -21,7 +21,7 @@ from PySide6.QtGui import QPixmap, QTransform, QColor, QPen, QBrush, QPixmapCach
 
 from ui.qt_compat import Qt, QPainter, QGraphicsItem
 
-from models.path_model import Path, PathElement, TranslationTarget, RotationTarget, Waypoint
+from models.path_model import Path, PathElement, TranslationTarget, RotationTarget, Waypoint, EventTrigger
 from models.simulation import simulate_path, SimResult
 from .constants import (
     FIELD_LENGTH_METERS,
@@ -44,6 +44,7 @@ from .items.elements import (
     RectElementItem,
     RotationHandle,
     HandoffRadiusVisualizer,
+    EventTriggerItem,
 )
 from .items.sim import RobotSimItem
 from .components.transport import TransportControls
@@ -221,7 +222,7 @@ class CanvasView(QGraphicsView):
                     continue
             except Exception:
                 pass
-            if kind == "rotation":
+            if kind in ("rotation", "event_trigger"):
                 if self._handoff_visualizers[i] is not None:
                     self.graphics_scene.removeItem(self._handoff_visualizers[i])
                     self._handoff_visualizers[i].deleteLater()
@@ -276,7 +277,10 @@ class CanvasView(QGraphicsView):
                         angle = self._element_rotation(element)
                     else:
                         angle = self._angle_for_translation_index(i)
-                    item.set_angle_radians(angle)
+                    if kind == "event_trigger":
+                        item.set_angle_radians(self._event_trigger_angle_for_index(i))
+                    else:
+                        item.set_angle_radians(angle)
                     if handle:
                         handle.set_angle(angle)
                         handle.sync_to_angle()
@@ -442,6 +446,19 @@ class CanvasView(QGraphicsView):
                 rotation_handle.set_angle(ang)
                 rotation_handle.sync_to_angle()
                 handoff_visualizer = None
+            elif isinstance(element, EventTrigger):
+                kind = "event_trigger"
+                length_m = max(0.2, float(self.robot_width_m) * 0.6)
+                item = EventTriggerItem(
+                    self,
+                    QPointF(*pos),
+                    i,
+                    length_m=length_m,
+                    color=QColor("#ffd54d"),
+                )
+                item.set_angle_radians(self._event_trigger_angle_for_index(i))
+                rotation_handle = None
+                handoff_visualizer = None
             elif isinstance(element, Waypoint):
                 kind = "waypoint"
                 item = RectElementItem(
@@ -514,7 +531,7 @@ class CanvasView(QGraphicsView):
         element = self._path.path_elements[index]
         if isinstance(element, (TranslationTarget, Waypoint)):
             return _get_translation_position(element)
-        if isinstance(element, RotationTarget):
+        if isinstance(element, (RotationTarget, EventTrigger)):
             prev_pos, next_pos = self._neighbor_positions_model(index)
             if prev_pos is None or next_pos is None:
                 return 0.0, 0.0
@@ -550,6 +567,17 @@ class CanvasView(QGraphicsView):
         if isinstance(element, Waypoint):
             return float(element.rotation_target.rotation_radians)
         return 0.0
+
+    def _event_trigger_angle_for_index(self, index: int) -> float:
+        if self._path is None:
+            return 0.0
+        prev_pos, next_pos = self._neighbor_positions_model(index)
+        if prev_pos is None or next_pos is None:
+            return 0.0
+        ax, ay = prev_pos
+        bx, by = next_pos
+        angle = math.atan2(by - ay, bx - ax)
+        return angle + (math.pi / 2.0)
 
     def _build_connecting_lines(self):
         self._connect_lines = []
@@ -656,7 +684,7 @@ class CanvasView(QGraphicsView):
             kind, _, _ = self._items[index]
         except Exception:
             return x_s, y_s
-        if kind != "rotation":
+        if kind not in ("rotation", "event_trigger"):
             return x_s, y_s
         prev_pos, next_pos = self._find_neighbor_item_positions(index)
         if prev_pos is None or next_pos is None:
@@ -701,7 +729,7 @@ class CanvasView(QGraphicsView):
         self._suppress_live_events = True
         try:
             for i, (kind, item, handle) in enumerate(self._items):
-                if kind != "rotation":
+                if kind not in ("rotation", "event_trigger"):
                     continue
                 prev_pos, next_pos = self._find_neighbor_item_positions(i)
                 if prev_pos is None or next_pos is None:
@@ -712,7 +740,7 @@ class CanvasView(QGraphicsView):
                 try:
                     if self._path and i < len(self._path.path_elements):
                         rt = self._path.path_elements[i]
-                        if isinstance(rt, RotationTarget):
+                        if isinstance(rt, (RotationTarget, EventTrigger)):
                             t = float(getattr(rt, "t_ratio", 0.0))
                 except Exception:
                     t = 0.0
@@ -723,6 +751,11 @@ class CanvasView(QGraphicsView):
                     item.setPos(proj_x, proj_y)
                 except Exception:
                     continue
+                if kind == "event_trigger":
+                    try:
+                        item.set_angle_radians(self._event_trigger_angle_for_index(i))
+                    except Exception:
+                        pass
                 if handle:
                     handle.sync_to_angle()
             self._update_connecting_lines()
@@ -732,7 +765,7 @@ class CanvasView(QGraphicsView):
     def _compute_rotation_t_cache(self) -> dict[int, float]:
         t_by_index = {}
         for i, (kind, item, _) in enumerate(self._items):
-            if kind != "rotation":
+            if kind not in ("rotation", "event_trigger"):
                 continue
             prev_pos, next_pos = self._find_neighbor_item_positions(i)
             if prev_pos is None or next_pos is None:
@@ -762,7 +795,7 @@ class CanvasView(QGraphicsView):
         if self._anchor_drag_in_progress:
             try:
                 for i, (kind, item, _) in enumerate(self._items):
-                    if kind != "rotation":
+                    if kind not in ("rotation", "event_trigger"):
                         continue
                     mx, my = self._model_from_scene(item.pos().x(), item.pos().y())
                     self.elementMoved.emit(i, mx, my)

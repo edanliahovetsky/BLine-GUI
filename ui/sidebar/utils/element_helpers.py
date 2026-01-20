@@ -2,7 +2,7 @@
 
 import math
 from typing import Optional, Tuple, Any, List
-from models.path_model import TranslationTarget, RotationTarget, Waypoint
+from models.path_model import TranslationTarget, RotationTarget, Waypoint, EventTrigger
 from ui.canvas import (
     ELEMENT_CIRCLE_RADIUS_M,
     ELEMENT_RECT_WIDTH_M,
@@ -48,7 +48,7 @@ def get_element_position(element: Any, idx: int, path_elements: List[Any]) -> Tu
     """Return model-space center position for an element."""
     if isinstance(element, (TranslationTarget, Waypoint)):
         return get_translation_position(element)
-    if isinstance(element, RotationTarget):
+    if isinstance(element, (RotationTarget, EventTrigger)):
         prev_pos, next_pos = get_neighbor_positions(idx, path_elements)
         if prev_pos is None or next_pos is None:
             return 0.0, 0.0
@@ -91,7 +91,7 @@ def get_element_bounding_radius(element: Any, robot_length_m: float, robot_width
     """Get the bounding radius for an element based on its type."""
     if isinstance(element, TranslationTarget):
         return float(ELEMENT_CIRCLE_RADIUS_M)
-    if isinstance(element, Waypoint) or isinstance(element, RotationTarget):
+    if isinstance(element, (Waypoint, RotationTarget, EventTrigger)):
         return float(math.hypot(robot_length_m / 2.0, robot_width_m / 2.0))
     return 0.3
 
