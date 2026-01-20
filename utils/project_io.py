@@ -13,6 +13,7 @@ from models.path_model import (
     RangedConstraint,
     TranslationTarget,
     Waypoint,
+    EventTrigger,
 )
 
 DefaultLookup = Callable[[str], Optional[float]]
@@ -39,6 +40,13 @@ def serialize_path(path: Path) -> Dict[str, Any]:
                 "rotation_radians": float(elem.rotation_radians),
                 "t_ratio": float(getattr(elem, "t_ratio", 0.0)),
                 "profiled_rotation": bool(getattr(elem, "profiled_rotation", True)),
+            }
+            items.append(entry)
+        elif isinstance(elem, EventTrigger):
+            entry = {
+                "type": "event_trigger",
+                "t_ratio": float(getattr(elem, "t_ratio", 0.0)),
+                "lib_key": str(getattr(elem, "lib_key", "")),
             }
             items.append(entry)
         elif isinstance(elem, Waypoint):
@@ -206,6 +214,13 @@ def deserialize_path(data: Any, default_lookup: DefaultLookup | None = None) -> 
                     if rx is not None and ry is not None:
                         rotation.legacy_position = (rx, ry)
                 path.path_elements.append(rotation)
+            elif typ == "event_trigger":
+                t_ratio_val = item.get("t_ratio")
+                trigger = EventTrigger(
+                    t_ratio=float(t_ratio_val) if t_ratio_val is not None else 0.0,
+                    lib_key=str(item.get("lib_key", "")),
+                )
+                path.path_elements.append(trigger)
             elif typ == "waypoint":
                 translation_data = item.get("translation_target", {}) or {}
                 rotation_data = item.get("rotation_target", {}) or {}

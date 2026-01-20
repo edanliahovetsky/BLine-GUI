@@ -339,6 +339,82 @@ class RectElementItem(QGraphicsRectItem):
         _add_square(right, bottom)
 
 
+class EventTriggerItem(QGraphicsLineItem):
+    def __init__(
+        self,
+        canvas_view: "CanvasView",
+        center_m: QPointF,
+        index_in_model: int,
+        *,
+        length_m: float,
+        color: QColor,
+    ):
+        super().__init__()
+        self.canvas_view = canvas_view
+        self.index_in_model = index_in_model
+        self._angle_radians: float = 0.0
+        self._length_m = float(length_m)
+        half = self._length_m * 0.5
+        self.setLine(-half, 0.0, half, 0.0)
+        self.setPos(self.canvas_view._scene_from_model(center_m.x(), center_m.y()))
+        pen = QPen(color, OUTLINE_THIN_M)
+        pen.setStyle(Qt.DashLine)
+        pen.setCapStyle(Qt.FlatCap)
+        pen.setJoinStyle(Qt.MiterJoin)
+        pen.setCosmetic(False)
+        self.setPen(pen)
+        self.setFlag(QGraphicsItem.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        self.setZValue(12)
+
+    def set_center(self, center_m: QPointF):
+        self.setPos(self.canvas_view._scene_from_model(center_m.x(), center_m.y()))
+
+    def set_angle_radians(self, radians: float):
+        self._angle_radians = radians
+        self.setRotation(math.degrees(-radians))
+
+    def set_length(self, length_m: float):
+        self._length_m = float(length_m)
+        half = self._length_m * 0.5
+        self.setLine(-half, 0.0, half, 0.0)
+
+    def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
+        if change == QGraphicsItem.ItemPositionChange:
+            new_pos: QPointF = value
+            try:
+                cx, cy = self.canvas_view._constrain_scene_coords_for_index(
+                    self.index_in_model, new_pos.x(), new_pos.y()
+                )
+                return QPointF(cx, cy)
+            except Exception:
+                return value
+        elif change == QGraphicsItem.ItemPositionHasChanged:
+            if not getattr(self.canvas_view, "_suppress_live_events", False):
+                try:
+                    x_m, y_m = self.canvas_view._model_from_scene(self.pos().x(), self.pos().y())
+                    self.canvas_view._on_item_live_moved(self.index_in_model, x_m, y_m)
+                except Exception:
+                    pass
+        return super().itemChange(change, value)
+
+    def mousePressEvent(self, event):
+        try:
+            self.canvas_view._on_item_pressed(self.index_in_model)
+            self.canvas_view._on_item_clicked(self.index_in_model)
+        except Exception:
+            pass
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        try:
+            self.canvas_view._on_item_released(self.index_in_model)
+        except Exception:
+            pass
+        super().mouseReleaseEvent(event)
+
+
 class RotationHandle(QGraphicsEllipseItem):
     def __init__(
         self,

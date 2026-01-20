@@ -60,6 +60,14 @@ class RotationTarget(PathElement):
 
 
 @dataclass
+class EventTrigger(PathElement):
+    # Position along the segment between anchors (0..1)
+    t_ratio: float = 0.0
+    # External library key; GUI does not interpret
+    lib_key: str = ""
+
+
+@dataclass
 class Waypoint(PathElement):
     translation_target: TranslationTarget = field(default_factory=TranslationTarget)
     rotation_target: RotationTarget = field(default_factory=RotationTarget)

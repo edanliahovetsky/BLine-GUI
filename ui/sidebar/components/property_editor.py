@@ -13,12 +13,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QFormLayout,
     QFrame,
+    QLineEdit,
 )
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon
 
 from ui.qt_compat import Qt, QSizePolicy
-from models.path_model import TranslationTarget, RotationTarget, Waypoint
+from models.path_model import TranslationTarget, RotationTarget, Waypoint, EventTrigger
 from ..utils import SPINNER_METADATA, DEGREES_TO_RADIANS_ATTR_MAP, clamp_from_metadata
 from ..widgets import NoWheelDoubleSpinBox
 from ..utils.constants import NON_RANGED_CONSTRAINT_KEYS
@@ -58,6 +59,13 @@ class PropertyEditor(QObject):
                 control.setChecked(True if name == "profiled_rotation" else False)
                 control.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 control.toggled.connect(lambda v, n=name: self._on_value_changed(n, v))
+            elif control_type == "text":
+                control = QLineEdit()
+                control.setPlaceholderText("")
+                control.setMinimumWidth(96)
+                control.setMaximumWidth(220)
+                control.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                control.textChanged.connect(lambda v, n=name: self._on_value_changed(n, v))
             else:
                 control = NoWheelDoubleSpinBox()
                 control.setSingleStep(data["step"])
@@ -290,6 +298,8 @@ class PropertyEditor(QObject):
                         control.blockSignals(True)
                         if isinstance(control, QCheckBox):
                             control.setChecked(bool(value))
+                        elif isinstance(control, QLineEdit):
+                            control.setText(str(value))
                         else:
                             shown = math.degrees(value) if convert_deg else value
                             control.setValue(shown)
@@ -370,6 +380,25 @@ class PropertyEditor(QObject):
                     control.blockSignals(False)
                 label.setVisible(True)
                 spin_row.setVisible(True)
+        elif isinstance(element, EventTrigger):
+            if "event_trigger_position_ratio" in self.spinners:
+                control, label, btn, spin_row = self.spinners["event_trigger_position_ratio"]
+                try:
+                    control.blockSignals(True)
+                    control.setValue(float(getattr(element, "t_ratio", 0.0)))
+                finally:
+                    control.blockSignals(False)
+                label.setVisible(True)
+                spin_row.setVisible(True)
+            if "event_trigger_lib_key" in self.spinners:
+                control, label, btn, spin_row = self.spinners["event_trigger_lib_key"]
+                try:
+                    control.blockSignals(True)
+                    control.setText(str(getattr(element, "lib_key", "")))
+                finally:
+                    control.blockSignals(False)
+                label.setVisible(True)
+                spin_row.setVisible(True)
 
         return optional_display_items
 
@@ -387,6 +416,8 @@ class PropertyEditor(QObject):
                 control.blockSignals(True)
                 if isinstance(control, QCheckBox):
                     control.setChecked(bool(value))
+                elif isinstance(control, QLineEdit):
+                    control.setText(str(value))
                 else:
                     control.setValue(float(value))
             finally:
@@ -418,6 +449,9 @@ class PropertyEditor(QObject):
             # profiled rotation
             set_control_value("profiled_rotation", getattr(element, "profiled_rotation", True))
             set_control_value("rotation_position_ratio", float(getattr(element, "t_ratio", 0.0)))
+        elif isinstance(element, EventTrigger):
+            set_control_value("event_trigger_position_ratio", float(getattr(element, "t_ratio", 0.0)))
+            set_control_value("event_trigger_lib_key", str(getattr(element, "lib_key", "")))
 
         # For waypoints, also reflect rotation ratio from the embedded rotation_target
         if isinstance(element, Waypoint):
@@ -444,6 +478,11 @@ class PropertyEditor(QObject):
                     return getattr(element.translation_target, key)
                 elif hasattr(element.rotation_target, key):
                     return getattr(element.rotation_target, key)
+            elif isinstance(element, EventTrigger):
+                if key == "event_trigger_position_ratio":
+                    return float(getattr(element, "t_ratio", 0.0))
+                if key == "event_trigger_lib_key":
+                    return str(getattr(element, "lib_key", ""))
             elif hasattr(element, key):
                 return getattr(element, key)
         return None
@@ -460,6 +499,15 @@ class PropertyEditor(QObject):
                     pass
             elif isinstance(element, RotationTarget):
                 element.t_ratio = float(clamped_ratio)
+            return
+        if key == "event_trigger_position_ratio":
+            clamped_ratio = clamp_from_metadata(key, float(value))
+            if isinstance(element, EventTrigger):
+                element.t_ratio = float(clamped_ratio)
+            return
+        if key == "event_trigger_lib_key":
+            if isinstance(element, EventTrigger):
+                element.lib_key = str(value)
             return
 
         if key in DEGREES_TO_RADIANS_ATTR_MAP:

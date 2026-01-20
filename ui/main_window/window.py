@@ -29,7 +29,7 @@ import copy
 
 from ..sidebar import Sidebar
 from ..sidebar.utils import clamp_from_metadata
-from models.path_model import TranslationTarget, RotationTarget, Waypoint, Path
+from models.path_model import TranslationTarget, RotationTarget, Waypoint, Path, EventTrigger
 from ..canvas import CanvasView, FIELD_LENGTH_METERS, FIELD_WIDTH_METERS
 from typing import Tuple
 from utils.project_manager import ProjectManager
@@ -1058,7 +1058,7 @@ class MainWindow(WindowEventMixin, QMainWindow):
         if isinstance(elem, TranslationTarget):
             elem.x_meters = x_m
             elem.y_meters = y_m
-        elif isinstance(elem, RotationTarget):
+        elif isinstance(elem, (RotationTarget, EventTrigger)):
             # Compute t_ratio from drag position and neighbor anchors
             prev_pos = None
             for i in range(index - 1, -1, -1):

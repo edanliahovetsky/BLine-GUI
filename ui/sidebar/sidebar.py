@@ -19,7 +19,7 @@ from PySide6.QtCore import Signal, QTimer, QEvent, QSize
 from PySide6.QtGui import QIcon
 
 from ui.qt_compat import Qt, QSizePolicy
-from models.path_model import Path, TranslationTarget, RotationTarget, Waypoint
+from models.path_model import Path, TranslationTarget, RotationTarget, Waypoint, EventTrigger
 
 
 from .widgets import CustomList, PersistentCustomList, PopupCombobox, PersistentScrollArea
@@ -607,6 +607,8 @@ class Sidebar(QWidget):
                         name = ElementType.TRANSLATION.value
                     elif isinstance(p, RotationTarget):
                         name = ElementType.ROTATION.value
+                    elif isinstance(p, EventTrigger):
+                        name = ElementType.EVENT_TRIGGER.value
                     elif isinstance(p, Waypoint):
                         name = ElementType.WAYPOINT.value
                     else:
@@ -710,6 +712,8 @@ class Sidebar(QWidget):
                     current_type = ElementType.TRANSLATION
                 elif isinstance(element, RotationTarget):
                     current_type = ElementType.ROTATION
+                elif isinstance(element, EventTrigger):
+                    current_type = ElementType.EVENT_TRIGGER
                 else:
                     current_type = ElementType.WAYPOINT
             except RuntimeError:
@@ -851,7 +855,7 @@ class Sidebar(QWidget):
             return
         is_end = idx == 0 or idx == len(self.path.path_elements) - 1
         allowed = [e.value for e in ElementType]
-        if is_end and current_type != ElementType.ROTATION:
+        if is_end and current_type not in (ElementType.ROTATION, ElementType.EVENT_TRIGGER):
             allowed = [ElementType.TRANSLATION.value, ElementType.WAYPOINT.value]
         try:
             self.type_combo.blockSignals(True)
@@ -867,10 +871,13 @@ class Sidebar(QWidget):
         if self.path is None:
             self.add_element_pop.clear()
             return
-        non_rot = sum(1 for e in self.path.path_elements if not isinstance(e, RotationTarget))
+        non_rot = sum(
+            1 for e in self.path.path_elements if not isinstance(e, (RotationTarget, EventTrigger))
+        )
         items = [ElementType.TRANSLATION.value, ElementType.WAYPOINT.value]
         if non_rot >= 2:
             items.append(ElementType.ROTATION.value)
+            items.append(ElementType.EVENT_TRIGGER.value)
         self.add_element_pop.add_items(items)
 
     def _insert_position_from_selection(self) -> int:
@@ -922,6 +929,8 @@ class Sidebar(QWidget):
             if isinstance(el, Waypoint)
             else "Rotation"
             if isinstance(el, RotationTarget)
+            else "Event Trigger"
+            if isinstance(el, EventTrigger)
             else "Translation"
         )
 
@@ -1134,6 +1143,8 @@ class Sidebar(QWidget):
             return "Waypoint"
         if isinstance(element, RotationTarget):
             return "Rotation"
+        if isinstance(element, EventTrigger):
+            return "Event Trigger"
         if isinstance(element, TranslationTarget):
             return "Translation"
         return "Element"

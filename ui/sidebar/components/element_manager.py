@@ -4,7 +4,7 @@
 import math
 from typing import Any, Dict, List, Optional, Tuple
 from PySide6.QtCore import QObject, Signal
-from models.path_model import Path, PathElement, TranslationTarget, RotationTarget, Waypoint
+from models.path_model import Path, PathElement, TranslationTarget, RotationTarget, Waypoint, EventTrigger
 from ui.canvas import (
     FIELD_LENGTH_METERS,
     FIELD_WIDTH_METERS,
@@ -195,7 +195,7 @@ class ElementManager(QObject):
             return -1
 
         # Enforce rotation cannot be at start/end
-        if element_type == ElementType.ROTATION:
+        if element_type in (ElementType.ROTATION, ElementType.EVENT_TRIGGER):
             if insert_pos == 0:
                 insert_pos = 1
             if insert_pos == len(self.path.path_elements):
@@ -223,11 +223,14 @@ class ElementManager(QObject):
                 t_ratio=0.0,
                 profiled_rotation=True,
             )
-        else:  # ROTATION
+        elif element_type == ElementType.ROTATION:
             t_choice = self._find_good_t_ratio_for_rotation(insert_pos, x0, y0)
             new_elem = RotationTarget(
                 rotation_radians=0.0, t_ratio=float(t_choice), profiled_rotation=True
             )
+        else:  # EVENT_TRIGGER
+            t_choice = self._find_good_t_ratio_for_rotation(insert_pos, x0, y0)
+            new_elem = EventTrigger(t_ratio=float(t_choice), lib_key="")
 
         # Insert the element
         self.path.path_elements.insert(insert_pos, new_elem)
@@ -271,6 +274,8 @@ class ElementManager(QObject):
             else (
                 ElementType.ROTATION
                 if isinstance(prev, RotationTarget)
+                else ElementType.EVENT_TRIGGER
+                if isinstance(prev, EventTrigger)
                 else ElementType.WAYPOINT
                 if isinstance(prev, Waypoint)
                 else None
@@ -284,7 +289,10 @@ class ElementManager(QObject):
             return False
 
         # Prevent creating rotation at ends unless the current element already is rotation
-        if new_type == ElementType.ROTATION and prev_type != ElementType.ROTATION:
+        if (
+            new_type in (ElementType.ROTATION, ElementType.EVENT_TRIGGER)
+            and prev_type not in (ElementType.ROTATION, ElementType.EVENT_TRIGGER)
+        ):
             if idx == 0 or idx == len(self.path.path_elements) - 1:
                 return False
 
@@ -295,7 +303,7 @@ class ElementManager(QObject):
         self.path.path_elements[idx] = new_elem
 
         # Ensure rotations are ordered correctly
-        if new_type == ElementType.ROTATION:
+        if new_type in (ElementType.ROTATION, ElementType.EVENT_TRIGGER):
             self.check_and_swap_rotation_targets()
 
         self.elementTypeChanged.emit(idx, prev, new_elem)
@@ -323,12 +331,17 @@ class ElementManager(QObject):
         elems = self.path.path_elements
 
         # Repair start
-        if isinstance(elems[0], RotationTarget):
-            non_rots = sum(1 for e in elems if not isinstance(e, RotationTarget))
+        if isinstance(elems[0], (RotationTarget, EventTrigger)):
+            non_rots = sum(1 for e in elems if not isinstance(e, (RotationTarget, EventTrigger)))
             if non_rots > 1:
                 # Swap with the first non_rot
                 swap_idx = next(
-                    (i for i, e in enumerate(elems) if not isinstance(e, RotationTarget)), None
+                    (
+                        i
+                        for i, e in enumerate(elems)
+                        if not isinstance(e, (RotationTarget, EventTrigger))
+                    ),
+                    None,
                 )
                 if swap_idx is not None:
                     elems[0], elems[swap_idx] = elems[swap_idx], elems[0]
@@ -345,15 +358,15 @@ class ElementManager(QObject):
                 )
 
         # Repair end
-        if elems and isinstance(elems[-1], RotationTarget):
-            non_rots = sum(1 for e in elems if not isinstance(e, RotationTarget))
+        if elems and isinstance(elems[-1], (RotationTarget, EventTrigger)):
+            non_rots = sum(1 for e in elems if not isinstance(e, (RotationTarget, EventTrigger)))
             if non_rots > 1:
                 # Swap with the last non_rot
                 swap_idx = next(
                     (
                         len(elems) - 1 - i
                         for i, e in enumerate(reversed(elems))
-                        if not isinstance(e, RotationTarget)
+                        if not isinstance(e, (RotationTarget, EventTrigger))
                     ),
                     None,
                 )
@@ -394,7 +407,9 @@ class ElementManager(QObject):
 
             # Gather rotation elements between anchors
             between_indices = [
-                j for j in range(start_idx + 1, end_idx) if isinstance(elems[j], RotationTarget)
+                j
+                for j in range(start_idx + 1, end_idx)
+                if isinstance(elems[j], (RotationTarget, EventTrigger))
             ]
             if len(between_indices) < 2:
                 continue
@@ -525,8 +540,13 @@ class ElementManager(QObject):
         if prev_type == ElementType.WAYPOINT:
             if new_type == ElementType.TRANSLATION:
                 return prev.translation_target
-            else:  # ROTATION
+            elif new_type == ElementType.ROTATION:
                 return prev.rotation_target
+            else:  # EVENT_TRIGGER
+                return EventTrigger(
+                    t_ratio=float(getattr(prev.rotation_target, "t_ratio", 0.0)),
+                    lib_key="",
+                )
 
         elif new_type == ElementType.ROTATION:
             return RotationTarget(
@@ -539,6 +559,11 @@ class ElementManager(QObject):
                     rotation_values["t_ratio"] if rotation_values["t_ratio"] is not None else 0.5
                 ),
                 profiled_rotation=True,
+            )
+        elif new_type == ElementType.EVENT_TRIGGER:
+            return EventTrigger(
+                t_ratio=rotation_values["t_ratio"] if rotation_values["t_ratio"] is not None else 0.5,
+                lib_key="",
             )
 
         elif new_type == ElementType.TRANSLATION:
@@ -562,8 +587,10 @@ class ElementManager(QObject):
                     getattr(prev, "intermediate_handoff_radius_meters", None),
                 )
                 return Waypoint(translation_target=tt)
-            else:  # ROTATION
+            else:  # ROTATION or EVENT_TRIGGER
                 # Create waypoint at the rotation's implied position
                 x_new, y_new = get_element_position(prev, idx, path_elements)
                 tt = self.create_translation_target(x_meters=x_new, y_meters=y_new)
-                return Waypoint(rotation_target=prev, translation_target=tt)
+                if isinstance(prev, RotationTarget):
+                    return Waypoint(rotation_target=prev, translation_target=tt)
+                return Waypoint(translation_target=tt)

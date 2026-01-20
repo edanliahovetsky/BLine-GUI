@@ -10,6 +10,7 @@ class ElementType(Enum):
     TRANSLATION = "translation"
     ROTATION = "rotation"
     WAYPOINT = "waypoint"
+    EVENT_TRIGGER = "event_trigger"
 
 
 # Spinner metadata configuration
@@ -49,6 +50,19 @@ SPINNER_METADATA = {
         "label": "Rotation Pos (0–1)",
         "step": 0.01,
         "range": (0.0, 1.0),
+        "removable": False,
+        "section": "core",
+    },
+    "event_trigger_position_ratio": {
+        "label": "Event Pos (0–1)",
+        "step": 0.01,
+        "range": (0.0, 1.0),
+        "removable": False,
+        "section": "core",
+    },
+    "event_trigger_lib_key": {
+        "label": "Lib Key",
+        "type": "text",
         "removable": False,
         "section": "core",
     },
