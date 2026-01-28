@@ -358,7 +358,7 @@ class EventTriggerItem(QGraphicsLineItem):
         self.setLine(-half, 0.0, half, 0.0)
         self.setPos(self.canvas_view._scene_from_model(center_m.x(), center_m.y()))
         pen = QPen(color, OUTLINE_THIN_M)
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.SolidLine)
         pen.setCapStyle(Qt.FlatCap)
         pen.setJoinStyle(Qt.MiterJoin)
         pen.setCosmetic(False)
