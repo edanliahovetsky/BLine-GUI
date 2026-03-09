@@ -18,6 +18,7 @@ class PersistentCustomList(QListWidget):
         self._suppress_scroll_events = False
         self._preserve_scroll = False
         self._auto_scroll_disabled = False
+        self._pre_drag_selected_model_index = None
         self.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
         self.setDefaultDropAction(Qt.MoveAction)
         self.setDragDropOverwriteMode(False)
@@ -98,6 +99,27 @@ class PersistentCustomList(QListWidget):
         # Do not mutate item data or text here; items already reordered visually.
         # Emitting reordered lets the owner update the underlying model.
         self.reordered.emit()
+
+    def startDrag(self, supportedActions):
+        """Snapshot pre-drag selection from stable model index before Qt begins drag."""
+        try:
+            current_item = self.currentItem()
+            model_index = current_item.data(Qt.UserRole) if current_item is not None else None
+            if isinstance(model_index, int):
+                self._pre_drag_selected_model_index = int(model_index)
+            else:
+                self._pre_drag_selected_model_index = None
+        except Exception:
+            self._pre_drag_selected_model_index = None
+        super().startDrag(supportedActions)
+
+    def consume_pre_drag_selected_model_index(self):
+        """Return and clear the saved model index from before drag started."""
+        value = self._pre_drag_selected_model_index
+        self._pre_drag_selected_model_index = None
+        if isinstance(value, int):
+            return value
+        return None
 
     def keyPressEvent(self, event):
         """Handle key press events to support delete operations."""

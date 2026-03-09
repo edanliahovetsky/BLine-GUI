@@ -46,12 +46,14 @@ class PathCommand(Command):
         description: str,
         on_change_callback: Optional[Callable[[], None]] = None,
         suppress_first_callback: bool = False,
+        on_undo_callback: Optional[Callable[[], None]] = None,
     ):
         self.path_ref = path_ref
         self.old_state = copy.deepcopy(old_state)
         self.new_state = copy.deepcopy(new_state)
         self.description = description
         self.on_change_callback = on_change_callback
+        self.on_undo_callback = on_undo_callback
         # Avoid triggering heavy refresh immediately when the user just made the change
         self._suppress_first_callback = bool(suppress_first_callback)
         self._has_executed_once = False
@@ -92,8 +94,9 @@ class PathCommand(Command):
             )
         except Exception:
             pass
-        if self.on_change_callback:
-            self.on_change_callback()
+        callback = self.on_undo_callback or self.on_change_callback
+        if callback:
+            callback()
 
     def get_description(self) -> str:
         return self.description

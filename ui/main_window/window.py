@@ -31,7 +31,7 @@ from ..sidebar import Sidebar
 from ..sidebar.utils import clamp_from_metadata
 from models.path_model import TranslationTarget, RotationTarget, Waypoint, Path, EventTrigger
 from ..canvas import CanvasView, FIELD_LENGTH_METERS, FIELD_WIDTH_METERS
-from typing import Tuple
+from typing import Tuple, Optional
 from utils.project_manager import ProjectManager
 from utils.undo_system import UndoRedoManager, PathCommand, ConfigCommand
 from ..config_dialog import ConfigDialog
@@ -111,8 +111,15 @@ class MainWindow(WindowEventMixin, QMainWindow):
         self.canvas.request_simulation_rebuild()
 
         # Wire up interactions: sidebar <-> canvas
-        self.sidebar.elementSelected.connect(self.canvas.select_index, Qt.QueuedConnection)
-        self.canvas.elementSelected.connect(self.sidebar.select_index, Qt.QueuedConnection)
+        self.sidebar.elementSelected.connect(
+            lambda index: self.canvas.select_index(index, center_on_item=False),
+            Qt.QueuedConnection,
+        )
+        self.canvas.elementSelected.connect(
+            lambda index: self.sidebar.select_index(index, propagate_to_canvas=False),
+            Qt.QueuedConnection,
+        )
+        self.canvas.selectionCleared.connect(self.sidebar.clear_selection, Qt.QueuedConnection)
         # Ranged constraints preview from sidebar -> canvas overlay
         try:
             self.sidebar.constraintRangePreviewRequested.connect(
@@ -449,13 +456,17 @@ class MainWindow(WindowEventMixin, QMainWindow):
             self.action_redo.setText("Redo")
             self.action_redo.setEnabled(False)
 
-    def _refresh_after_undo_redo(self):
+    def _refresh_after_undo_redo(self, selected_index: Optional[int] = None):
         """Refresh all UI components after an undo/redo operation."""
         # Refresh canvas from model
         self.canvas.set_path(self.path)
         self.canvas.refresh_from_model()
         self.canvas.update_handoff_radius_visualizers()
         self.canvas.request_simulation_rebuild()
+
+        # Override the cached selection index so set_path restores the right element
+        if selected_index is not None:
+            self.sidebar._last_selected_index = selected_index
 
         # Refresh sidebar
         self.sidebar.set_path(self.path)
@@ -470,7 +481,13 @@ class MainWindow(WindowEventMixin, QMainWindow):
         # Trigger autosave after undo/redo since the path has changed
         self.autosave.schedule()
 
-    def _record_path_change(self, description: str, old_path: Path = None):
+    def _record_path_change(
+        self,
+        description: str,
+        old_path: Path = None,
+        suppress_first_refresh: Optional[bool] = None,
+        restore_index_on_undo: Optional[int] = None,
+    ):
         """Record a path change in the undo system."""
         if old_path is None:
             # Create a snapshot of the current path before change
@@ -479,21 +496,38 @@ class MainWindow(WindowEventMixin, QMainWindow):
         # The new path state will be captured after the change is made
         def create_command():
             new_path = copy.deepcopy(self.path)
+            if suppress_first_refresh is None:
+                # Micro-edits and live-drag edits already updated the live UI;
+                # skip the initial heavy refresh for these on first execute.
+                suppress_first_callback = (
+                    description.startswith("Edit ")
+                    or description.startswith("Remove ")
+                    or description.startswith("Add ")
+                    or description.startswith("Edit Range")
+                    or description.startswith("Move ")
+                    or description.startswith("Rotate ")
+                )
+            else:
+                suppress_first_callback = bool(suppress_first_refresh)
+
+            # Build undo-specific callback when a pre-action selection index is provided
+            on_undo = None
+            if restore_index_on_undo is not None:
+                idx_on_undo = int(restore_index_on_undo)
+                idx_on_redo = self.sidebar.get_selected_index()
+                on_undo = lambda: self._refresh_after_undo_redo(selected_index=idx_on_undo)
+                on_redo = lambda: self._refresh_after_undo_redo(selected_index=idx_on_redo)
+            else:
+                on_redo = self._refresh_after_undo_redo
+
             command = PathCommand(
                 path_ref=self.path,
                 old_state=old_path,
                 new_state=new_path,
                 description=description,
-                on_change_callback=self._refresh_after_undo_redo,
-                # Micro-edits from sidebar already updated the live UI, so skip first heavy refresh
-                suppress_first_callback=(
-                    True
-                    if description.startswith("Edit ")
-                    or description.startswith("Remove ")
-                    or description.startswith("Add ")
-                    or description.startswith("Edit Range")
-                    else False
-                ),
+                on_change_callback=on_redo,
+                suppress_first_callback=suppress_first_callback,
+                on_undo_callback=on_undo,
             )
             self.undo_manager.execute_command(command)
 
@@ -501,21 +535,43 @@ class MainWindow(WindowEventMixin, QMainWindow):
         # so the change is applied first
         QTimer.singleShot(0, create_command)
 
+    def _has_path_changed_since(self, old_path: Path) -> bool:
+        """Return True when current path differs from the provided snapshot."""
+        if old_path is None:
+            return True
+        try:
+            if self.path.path_elements != old_path.path_elements:
+                return True
+            if self.path.constraints != old_path.constraints:
+                return True
+            if getattr(self.path, "ranged_constraints", []) != getattr(
+                old_path, "ranged_constraints", []
+            ):
+                return True
+            return False
+        except Exception:
+            # Be conservative if comparison fails.
+            return True
+
     def _on_sidebar_about_to_change(self, description: str):
         """Capture pre-change snapshot for undo before a sidebar-driven edit."""
         self._sidebar_old_state = copy.deepcopy(self.path)
+        self._sidebar_old_selected_index = self.sidebar.get_selected_index()
         self._sidebar_action_desc = description
 
     def _on_sidebar_action_committed(self, description: str):
         """Commit undo command after sidebar-driven edit completes with a clear description."""
         try:
             old_state = getattr(self, "_sidebar_old_state", None)
+            old_selected = getattr(self, "_sidebar_old_selected_index", None)
             desc = description or getattr(self, "_sidebar_action_desc", "Edit")
             if old_state is not None:
-                self._record_path_change(desc, old_state)
+                self._record_path_change(desc, old_state, restore_index_on_undo=old_selected)
         finally:
             if hasattr(self, "_sidebar_old_state"):
                 delattr(self, "_sidebar_old_state")
+            if hasattr(self, "_sidebar_old_selected_index"):
+                delattr(self, "_sidebar_old_selected_index")
             if hasattr(self, "_sidebar_action_desc"):
                 delattr(self, "_sidebar_action_desc")
 
@@ -1200,25 +1256,64 @@ class MainWindow(WindowEventMixin, QMainWindow):
         if index < 0 or index >= len(self.path.path_elements):
             return
 
-        # Record the drag operation for undo/redo
-        if hasattr(self, "_drag_start_state"):
-            element_type = type(self.path.path_elements[index]).__name__
-            self._record_path_change(f"Move {element_type}", self._drag_start_state)
-            delattr(self, "_drag_start_state")
-
         # Remember which element was dragged so we can re-select it after any reordering
         dragged_elem = self.path.path_elements[index]
+        dragged_identity = id(dragged_elem)
+        element_type = type(dragged_elem).__name__
 
         # Re-evaluate rotation order now that the drag is complete
-        self.sidebar._check_and_swap_rotation_targets()
+        structure_changed = bool(self.sidebar._check_and_swap_rotation_targets())
 
-        # Attempt to restore selection for the dragged element
+        old_state = getattr(self, "_drag_start_state", None)
         try:
-            new_index = self.path.path_elements.index(dragged_elem)
-        except ValueError:
+            new_index = next(
+                (
+                    i
+                    for i, element in enumerate(self.path.path_elements)
+                    if id(element) == dragged_identity
+                ),
+                -1,
+            )
+        except Exception:
             new_index = -1
-        if new_index >= 0:
-            self.sidebar.select_index(new_index)
+
+        if new_index >= 0 and structure_changed:
+            # Rebuild views against the reordered model before deterministic reselection.
+            try:
+                self.sidebar.rebuild_points_list()
+            except Exception:
+                pass
+            try:
+                self.canvas.set_path(self.path)
+            except Exception:
+                pass
+
+            if self.sidebar.get_selected_index() != new_index:
+                self.sidebar.select_index(new_index, propagate_to_canvas=False, defer=False)
+            self.canvas.select_index(new_index, center_on_item=False)
+
+            # Defensive guard: preserve canvas selection after any queued refresh work.
+            QTimer.singleShot(
+                0, lambda idx=new_index: self.canvas.select_index(idx, center_on_item=False)
+            )
+        elif new_index >= 0:
+            # Non-structural changes stay on the live-updated path; keep local UI sync only when needed.
+            if self.sidebar.get_selected_index() != new_index:
+                self.sidebar.select_index(new_index, propagate_to_canvas=False)
+
+        # Record the drag operation for undo/redo only if model state actually changed.
+        did_change = bool(old_state is not None and self._has_path_changed_since(old_state))
+        try:
+            if did_change:
+                self._record_path_change(
+                    f"Move {element_type}",
+                    old_state,
+                    suppress_first_refresh=not structure_changed,
+                    restore_index_on_undo=index,
+                )
+        finally:
+            if hasattr(self, "_drag_start_state"):
+                delattr(self, "_drag_start_state")
 
     def _on_canvas_rotation_finished(self, index: int):
         """Record rotation change undo when the user releases the rotation handle."""
@@ -1229,9 +1324,19 @@ class MainWindow(WindowEventMixin, QMainWindow):
         try:
             elem = self.path.path_elements[index]
             if isinstance(elem, RotationTarget):
-                self._record_path_change("Rotate RotationTarget", self._rotate_start_state)
+                if self._has_path_changed_since(self._rotate_start_state):
+                    self._record_path_change(
+                        "Rotate RotationTarget",
+                        self._rotate_start_state,
+                        suppress_first_refresh=True,
+                    )
             elif isinstance(elem, Waypoint):
-                self._record_path_change("Rotate Waypoint", self._rotate_start_state)
+                if self._has_path_changed_since(self._rotate_start_state):
+                    self._record_path_change(
+                        "Rotate Waypoint",
+                        self._rotate_start_state,
+                        suppress_first_refresh=True,
+                    )
         finally:
             if hasattr(self, "_rotate_start_state"):
                 delattr(self, "_rotate_start_state")

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QGraphicsLineItem,
 )
 from PySide6.QtGui import QBrush, QColor, QPen, QPolygonF
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import QPointF, QTimer
 
 from ui.qt_compat import Qt, QGraphicsItem
 
@@ -26,11 +26,22 @@ from ..constants import (
     HANDLE_DISTANCE_M,
     HANDLE_RADIUS_M,
     HANDOFF_RADIUS_PEN,
+    SELECTION_ACCENT_COLOR,
+    SELECTION_CIRCLE_RING_WIDTH_M,
+    SELECTION_CIRCLE_RING_PADDING_M,
+    SELECTION_RECT_OUTLINE_WIDTH_M,
+    SELECTION_RECT_OUTLINE_PADDING_M,
+    SELECTION_EVENT_LINE_WIDTH_M,
+    SELECTION_PULSE_WIDTH_SCALE_MAX,
 )
 from models.path_model import Waypoint, TranslationTarget
 
 if TYPE_CHECKING:
     from ui.canvas.view import CanvasView
+
+
+def _highlight_margin(padding: float, width: float) -> float:
+    return padding + 0.5 * width * SELECTION_PULSE_WIDTH_SCALE_MAX
 
 
 def _apply_rotation_dash_style(pen: QPen) -> QPen:
@@ -113,6 +124,11 @@ class CircleElementItem(QGraphicsEllipseItem):
         self._angle_radians = radians
         self.setRotation(math.degrees(-radians))
 
+    def boundingRect(self):
+        base_rect = super().boundingRect()
+        margin = _highlight_margin(SELECTION_CIRCLE_RING_PADDING_M, SELECTION_CIRCLE_RING_WIDTH_M)
+        return base_rect.adjusted(-margin, -margin, margin, margin)
+
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
         if change == QGraphicsItem.ItemPositionChange:
             new_pos: QPointF = value
@@ -135,10 +151,15 @@ class CircleElementItem(QGraphicsEllipseItem):
     def mousePressEvent(self, event):
         try:
             self.canvas_view._on_item_pressed(self.index_in_model)
-            self.canvas_view._on_item_clicked(self.index_in_model)
         except Exception:
             pass
         super().mousePressEvent(event)
+        try:
+            QTimer.singleShot(
+                0, lambda idx=self.index_in_model: self.canvas_view._on_item_clicked(idx)
+            )
+        except Exception:
+            pass
 
     def mouseReleaseEvent(self, event):
         try:
@@ -146,6 +167,41 @@ class CircleElementItem(QGraphicsEllipseItem):
         except Exception:
             pass
         super().mouseReleaseEvent(event)
+
+    def paint(self, painter, option, widget=None):  # noqa: D401
+        super().paint(painter, option, widget)
+        if not (
+            self.isSelected() or self.canvas_view.is_index_actively_pressed(self.index_in_model)
+        ):
+            return
+        try:
+            painter.save()
+            pulse_alpha = self.canvas_view.get_selection_pulse_alpha()
+            pulse_scale = self.canvas_view.get_selection_pulse_width_scale()
+            selection_color = QColor(SELECTION_ACCENT_COLOR)
+            selection_color.setAlphaF(pulse_alpha)
+            selection_pen = QPen(
+                selection_color, max(0.01, SELECTION_CIRCLE_RING_WIDTH_M * pulse_scale)
+            )
+            selection_pen.setCapStyle(Qt.RoundCap)
+            selection_pen.setJoinStyle(Qt.RoundJoin)
+            selection_pen.setCosmetic(False)
+            ring_rect = self.rect().adjusted(
+                -SELECTION_CIRCLE_RING_PADDING_M,
+                -SELECTION_CIRCLE_RING_PADDING_M,
+                SELECTION_CIRCLE_RING_PADDING_M,
+                SELECTION_CIRCLE_RING_PADDING_M,
+            )
+            painter.setPen(selection_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(ring_rect)
+        except Exception:
+            pass
+        finally:
+            try:
+                painter.restore()
+            except Exception:
+                pass
 
 
 class RectElementItem(QGraphicsRectItem):
@@ -174,10 +230,12 @@ class RectElementItem(QGraphicsRectItem):
         pen_width_m = OUTLINE_THICK_M if (outline_color and not dashed_outline) else OUTLINE_THIN_M
         inset = (pen_width_m if outline_color else 0.0) * 0.5
         x_min = -(rw / 2.0)
-        x_max = (rw / 2.0)
+        x_max = rw / 2.0
         y_min = -(rh / 2.0)
-        y_max = (rh / 2.0)
-        self.setRect(x_min + inset, y_min + inset, (x_max - x_min) - inset * 2, (y_max - y_min) - inset * 2)
+        y_max = rh / 2.0
+        self.setRect(
+            x_min + inset, y_min + inset, (x_max - x_min) - inset * 2, (y_max - y_min) - inset * 2
+        )
         self.setPos(self.canvas_view._scene_from_model(center_m.x(), center_m.y()))
         pen = QPen(self._outline_color, pen_width_m if outline_color else 0.0)
         if dashed_outline:
@@ -242,6 +300,11 @@ class RectElementItem(QGraphicsRectItem):
     def set_angle_radians(self, radians: float):
         self._angle_radians = radians
         self.setRotation(math.degrees(-radians))
+
+    def boundingRect(self):
+        base_rect = super().boundingRect()
+        margin = _highlight_margin(SELECTION_RECT_OUTLINE_PADDING_M, SELECTION_RECT_OUTLINE_WIDTH_M)
+        return base_rect.adjusted(-margin, -margin, margin, margin)
 
     def set_protrusion_visual(self, *, enabled: bool, shown: bool, side: str, distance_m: float):
         self._protrusion_enabled = bool(enabled)
@@ -342,10 +405,15 @@ class RectElementItem(QGraphicsRectItem):
     def mousePressEvent(self, event):
         try:
             self.canvas_view._on_item_pressed(self.index_in_model)
-            self.canvas_view._on_item_clicked(self.index_in_model)
         except Exception:
             pass
         super().mousePressEvent(event)
+        try:
+            QTimer.singleShot(
+                0, lambda idx=self.index_in_model: self.canvas_view._on_item_clicked(idx)
+            )
+        except Exception:
+            pass
 
     def mouseReleaseEvent(self, event):
         try:
@@ -361,6 +429,38 @@ class RectElementItem(QGraphicsRectItem):
         except Exception:
             pass
         super().paint(painter, option, widget)
+        if not (
+            self.isSelected() or self.canvas_view.is_index_actively_pressed(self.index_in_model)
+        ):
+            return
+        try:
+            painter.save()
+            pulse_alpha = self.canvas_view.get_selection_pulse_alpha()
+            pulse_scale = self.canvas_view.get_selection_pulse_width_scale()
+            selection_color = QColor(SELECTION_ACCENT_COLOR)
+            selection_color.setAlphaF(pulse_alpha)
+            selection_pen = QPen(
+                selection_color, max(0.01, SELECTION_RECT_OUTLINE_WIDTH_M * pulse_scale)
+            )
+            selection_pen.setCapStyle(Qt.SquareCap)
+            selection_pen.setJoinStyle(Qt.MiterJoin)
+            selection_pen.setCosmetic(False)
+            selection_rect = self.rect().adjusted(
+                -SELECTION_RECT_OUTLINE_PADDING_M,
+                -SELECTION_RECT_OUTLINE_PADDING_M,
+                SELECTION_RECT_OUTLINE_PADDING_M,
+                SELECTION_RECT_OUTLINE_PADDING_M,
+            )
+            painter.setPen(selection_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(selection_rect)
+        except Exception:
+            pass
+        finally:
+            try:
+                painter.restore()
+            except Exception:
+                pass
 
     def _create_corner_caps(self, color: QColor, pen_width_m: float, subtle: bool = False):
         # Deprecated: kept for reference
@@ -476,6 +576,11 @@ class EventTriggerItem(QGraphicsLineItem):
         half = self._length_m * 0.5
         self.setLine(-half, 0.0, half, 0.0)
 
+    def boundingRect(self):
+        base_rect = super().boundingRect()
+        margin = _highlight_margin(0.0, SELECTION_EVENT_LINE_WIDTH_M)
+        return base_rect.adjusted(-margin, -margin, margin, margin)
+
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
         if change == QGraphicsItem.ItemPositionChange:
             new_pos: QPointF = value
@@ -498,10 +603,15 @@ class EventTriggerItem(QGraphicsLineItem):
     def mousePressEvent(self, event):
         try:
             self.canvas_view._on_item_pressed(self.index_in_model)
-            self.canvas_view._on_item_clicked(self.index_in_model)
         except Exception:
             pass
         super().mousePressEvent(event)
+        try:
+            QTimer.singleShot(
+                0, lambda idx=self.index_in_model: self.canvas_view._on_item_clicked(idx)
+            )
+        except Exception:
+            pass
 
     def mouseReleaseEvent(self, event):
         try:
@@ -509,6 +619,36 @@ class EventTriggerItem(QGraphicsLineItem):
         except Exception:
             pass
         super().mouseReleaseEvent(event)
+
+    def paint(self, painter, option, widget=None):  # noqa: D401
+        super().paint(painter, option, widget)
+        if not (
+            self.isSelected() or self.canvas_view.is_index_actively_pressed(self.index_in_model)
+        ):
+            return
+        try:
+            painter.save()
+            pulse_alpha = self.canvas_view.get_selection_pulse_alpha()
+            pulse_scale = self.canvas_view.get_selection_pulse_width_scale()
+            selection_color = QColor(SELECTION_ACCENT_COLOR)
+            selection_color.setAlphaF(pulse_alpha)
+            selection_pen = QPen(
+                selection_color, max(0.01, SELECTION_EVENT_LINE_WIDTH_M * pulse_scale)
+            )
+            selection_pen.setStyle(Qt.SolidLine)
+            selection_pen.setCapStyle(Qt.RoundCap)
+            selection_pen.setJoinStyle(Qt.RoundJoin)
+            selection_pen.setCosmetic(False)
+            painter.setPen(selection_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawLine(self.line())
+        except Exception:
+            pass
+        finally:
+            try:
+                painter.restore()
+            except Exception:
+                pass
 
 
 class RotationHandle(QGraphicsEllipseItem):
@@ -592,12 +732,18 @@ class RotationHandle(QGraphicsEllipseItem):
         try:
             self.canvas_view.graphics_scene.clearSelection()
             self.center_item.setSelected(True)
-            self.canvas_view._on_item_clicked(self.center_item.index_in_model)
         except Exception:
             pass
         self.center_item.setFlag(QGraphicsItem.ItemIsMovable, False)
         self._dragging = True
         super().mousePressEvent(event)
+        try:
+            QTimer.singleShot(
+                0,
+                lambda idx=self.center_item.index_in_model: self.canvas_view._on_item_clicked(idx),
+            )
+        except Exception:
+            pass
 
     def mouseReleaseEvent(self, event):
         try:

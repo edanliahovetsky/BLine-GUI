@@ -57,6 +57,12 @@ class Sidebar(QWidget):
         self._ready: bool = False
         # Track last selected index for restoration when paths are reloaded
         self._last_selected_index: int = 0
+        # Suppress redundant elementSelected emits to avoid cross-view selection churn.
+        self._last_emitted_selected_index: Optional[int] = None
+        # One-shot suppression flag for canvas-originated programmatic list selection.
+        self._suppress_element_selected_emit_once: bool = False
+        # Stable identity of the currently selected model element.
+        self._selected_element_identity: Optional[int] = None
 
         # Initialize components
         self.element_manager = ElementManager(self)
@@ -467,7 +473,20 @@ class Sidebar(QWidget):
             return None
         return row
 
-    def select_index(self, index: int):
+    def _find_index_by_identity(self, identity: int) -> Optional[int]:
+        """Resolve a model index by Python object identity."""
+        if self.path is None:
+            return None
+        try:
+            target_id = int(identity)
+        except Exception:
+            return None
+        for i, element in enumerate(self.path.path_elements):
+            if id(element) == target_id:
+                return i
+        return None
+
+    def select_index(self, index: int, propagate_to_canvas: bool = True, defer: bool = True):
         """Select an element by index."""
         if index is None:
             return
@@ -487,9 +506,20 @@ class Sidebar(QWidget):
         # Disable auto-scrolling to preserve user's scroll position
         self.points_list.disable_auto_scroll_temporarily()
 
-        def do_selection_and_restore(i, pts_scroll, const_scroll):
-            self.points_list.setCurrentRow(i)
-            self.points_list.enable_auto_scroll()
+        suppress_emit = not bool(propagate_to_canvas)
+
+        def do_selection_and_restore(i, pts_scroll, const_scroll, suppress):
+            # Only suppress if the row is actually changing; otherwise we'd suppress
+            # a future real user selection due to no itemSelectionChanged emission.
+            try:
+                if suppress and self.points_list.currentRow() != i:
+                    self._suppress_element_selected_emit_once = True
+            except Exception:
+                pass
+            try:
+                self.points_list.setCurrentRow(i)
+            finally:
+                self.points_list.enable_auto_scroll()
             # Restore scroll positions after Qt has finished processing the selection
             QTimer.singleShot(
                 20,
@@ -507,11 +537,31 @@ class Sidebar(QWidget):
                 ),
             )
 
-        QTimer.singleShot(
-            0, lambda: do_selection_and_restore(index, points_scroll_pos, constraints_scroll_pos)
-        )
+        if defer:
+            QTimer.singleShot(
+                0,
+                lambda: do_selection_and_restore(
+                    index, points_scroll_pos, constraints_scroll_pos, suppress_emit
+                ),
+            )
+        else:
+            do_selection_and_restore(
+                index, points_scroll_pos, constraints_scroll_pos, suppress_emit
+            )
 
-    def _check_and_swap_rotation_targets(self):
+    def clear_selection(self):
+        """Clear list selection and hide element controls."""
+        try:
+            self.points_list.clearSelection()
+            self.points_list.setCurrentRow(-1)
+        except Exception:
+            pass
+        self._last_emitted_selected_index = None
+        self._suppress_element_selected_emit_once = False
+        self._selected_element_identity = None
+        self.hide_spinners()
+
+    def _check_and_swap_rotation_targets(self) -> bool:
         """Compatibility shim: call ElementManager rotation ordering logic.
 
         Older code paths (e.g., main window drag-finish handler) expect the
@@ -522,9 +572,10 @@ class Sidebar(QWidget):
         """
         try:
             if hasattr(self, "element_manager") and self.element_manager is not None:
-                self.element_manager.check_and_swap_rotation_targets()
+                return bool(self.element_manager.check_and_swap_rotation_targets())
         except Exception:
             pass
+        return False
 
     def refresh_current_selection(self):
         """Re-run expose for current selection using current model values."""
@@ -552,6 +603,9 @@ class Sidebar(QWidget):
     def set_path(self, path: Path):
         """Set the path to edit."""
         self.path = path
+        self._last_emitted_selected_index = None
+        self._suppress_element_selected_emit_once = False
+        self._selected_element_identity = None
         self.element_manager.set_path(path)
         self.constraint_manager.set_path(path)
 
@@ -672,6 +726,7 @@ class Sidebar(QWidget):
 
             idx = self.get_selected_index()
             if idx is None or self.path is None:
+                self._selected_element_identity = None
                 self.hide_spinners()
                 return
 
@@ -686,6 +741,7 @@ class Sidebar(QWidget):
 
             # Validate index bounds
             if idx < 0 or idx >= len(self.path.path_elements):
+                self._selected_element_identity = None
                 self.hide_spinners()
                 return
 
@@ -693,8 +749,10 @@ class Sidebar(QWidget):
             try:
                 element = self.path.get_element(idx)
             except (IndexError, RuntimeError):
+                self._selected_element_identity = None
                 self.hide_spinners()
                 return
+            self._selected_element_identity = id(self.path.path_elements[idx])
 
             # Clear and hide existing UI
             self.optional_pop.clear()
@@ -746,11 +804,22 @@ class Sidebar(QWidget):
             except (RuntimeError, AttributeError):
                 pass
 
+            if self._suppress_element_selected_emit_once:
+                self._suppress_element_selected_emit_once = False
+                self._last_emitted_selected_index = int(idx)
+            elif self._last_emitted_selected_index != int(idx):
+                try:
+                    self.elementSelected.emit(int(idx))
+                    self._last_emitted_selected_index = int(idx)
+                except Exception:
+                    pass
+
             # Note: Scroll position restoration is handled by calling methods (like on_constraint_added)
             # to avoid conflicts between multiple restoration attempts
 
         except Exception as e:
             # Fail safe: keep UI alive
+            self._selected_element_identity = None
             self.hide_spinners()
 
     def _expose_element(self, element):
@@ -927,11 +996,11 @@ class Sidebar(QWidget):
         tname = (
             "Waypoint"
             if isinstance(el, Waypoint)
-            else "Rotation"
-            if isinstance(el, RotationTarget)
-            else "Event Trigger"
-            if isinstance(el, EventTrigger)
-            else "Translation"
+            else (
+                "Rotation"
+                if isinstance(el, RotationTarget)
+                else "Event Trigger" if isinstance(el, EventTrigger) else "Translation"
+            )
         )
 
         # Announce about-to-change for undo snapshot
@@ -983,6 +1052,48 @@ class Sidebar(QWidget):
         if self.path is None:
             return
 
+        selected_model_index_before = None
+        selected_identity = None
+
+        # 1) Preferred source: model index snapshot captured at drag start.
+        try:
+            if hasattr(self.points_list, "consume_pre_drag_selected_model_index"):
+                selected_model_index_before = (
+                    self.points_list.consume_pre_drag_selected_model_index()
+                )
+        except Exception:
+            selected_model_index_before = None
+
+        if selected_model_index_before is not None and 0 <= selected_model_index_before < len(
+            self.path.path_elements
+        ):
+            selected_identity = id(self.path.path_elements[selected_model_index_before])
+        else:
+            selected_model_index_before = None
+
+        # 2) Cached selected identity from the last resolved selection.
+        if selected_identity is None:
+            cached_identity = getattr(self, "_selected_element_identity", None)
+            if isinstance(cached_identity, int):
+                resolved_idx = self._find_index_by_identity(cached_identity)
+                if resolved_idx is not None:
+                    selected_model_index_before = int(resolved_idx)
+                    selected_identity = int(cached_identity)
+
+        # 3) Last-resort fallback: currently selected UI item's stable model index.
+        if selected_identity is None:
+            try:
+                current_item = self.points_list.currentItem()
+                if current_item is not None:
+                    model_index = current_item.data(Qt.UserRole)
+                    if isinstance(model_index, int) and 0 <= model_index < len(
+                        self.path.path_elements
+                    ):
+                        selected_model_index_before = int(model_index)
+                        selected_identity = id(self.path.path_elements[selected_model_index_before])
+            except Exception:
+                selected_model_index_before = None
+
         try:
             self.aboutToChange.emit("Reorder elements")
         except Exception:
@@ -1001,6 +1112,21 @@ class Sidebar(QWidget):
 
         # Rebuild UI
         self.rebuild_points_list()
+
+        # Preserve selection by element identity (not by row index).
+        restored_index = None
+        if selected_model_index_before is not None:
+            if selected_identity is not None:
+                restored_index = self._find_index_by_identity(selected_identity)
+            if restored_index is None and self.path.path_elements:
+                restored_index = max(
+                    0,
+                    min(int(selected_model_index_before), len(self.path.path_elements) - 1),
+                )
+        if restored_index is not None:
+            self.select_index(restored_index, defer=False)
+        elif selected_model_index_before is not None:
+            self.clear_selection()
 
         try:
             self.userActionOccurred.emit("Reorder elements")
