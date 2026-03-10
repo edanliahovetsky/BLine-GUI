@@ -139,8 +139,29 @@ jobs:
           path: BLine-*-Windows-Executable.zip
           if-no-files-found: error
 
+  build-macos:
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true'
+    runs-on: macos-14
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build DMG
+        run: |
+          cd packaging
+          chmod +x build-dmg.sh
+          ./build-dmg.sh
+
+      - name: Upload macOS DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLine-macOS-DMG
+          path: BLine-*-macOS-arm64.dmg
+          if-no-files-found: error
+
   create-release:
-    needs: [check-release, build-linux, build-windows]
+    needs: [check-release, build-linux, build-windows, build-macos]
     if: needs.check-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -173,6 +194,12 @@ jobs:
           name: BLine-Windows-Executable
           path: ./artifacts
 
+      - name: Download macOS DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: BLine-macOS-DMG
+          path: ./artifacts
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -183,6 +210,9 @@ jobs:
 
             ### Downloads
 
+            **macOS (Apple Silicon):**
+            - `BLine-${{ needs.check-release.outputs.version }}-macOS-arm64.dmg` - Disk image
+
             **Linux:**
             - `BLine-x86_64.AppImage` - Single portable file
 
@@ -192,6 +222,11 @@ jobs:
             - `BLine-${{ needs.check-release.outputs.version }}-Windows-Executable.zip` - Executable folder
 
             ### Installation
+
+            **macOS:**
+            1. Download `BLine-${{ needs.check-release.outputs.version }}-macOS-arm64.dmg`
+            2. Open the DMG and drag BLine.app to Applications
+            3. Launch from Applications
 
             **Linux:**
             1. Download `BLine-x86_64.AppImage`

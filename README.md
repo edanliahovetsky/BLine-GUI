@@ -51,7 +51,11 @@ No installation or dependencies required!
 
 #### macOS
 
-macOS builds are not currently available as prebuilt binaries. See [Install from Source](#install-from-source) below.
+**DMG (ARM Only)**
+1. Download `BLine-${VERSION}-macOS-${ARCH}.dmg`
+2. Open it
+3. Drag Bline to your Applications folder
+4. Run the Bline applications
 
 ---
 
