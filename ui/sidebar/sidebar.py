@@ -49,6 +49,11 @@ class Sidebar(QWidget):
     constraintRangePreviewRequested = Signal(str, int, int)  # key, start_ordinal, end_ordinal
     constraintRangePreviewCleared = Signal()
 
+    # Forward popout lifecycle signals
+    popoutOpened = Signal()
+    popoutClosed = Signal()
+    popoutSegmentSelected = Signal(str, int, int)  # key, start_ordinal, end_ordinal
+
     def __init__(self, path=Path()):
         super().__init__()
         self.path = path
@@ -451,6 +456,11 @@ class Sidebar(QWidget):
         self.constraint_manager.constraintRangePreviewCleared.connect(
             self.constraintRangePreviewCleared
         )
+
+        # Forward popout lifecycle signals
+        self.constraint_manager.popoutOpened.connect(self.popoutOpened)
+        self.constraint_manager.popoutClosed.connect(self.popoutClosed)
+        self.constraint_manager.popoutSegmentSelected.connect(self.popoutSegmentSelected)
 
         # Property editor signals
         self.property_editor.propertyChanged.connect(self.on_attribute_change)

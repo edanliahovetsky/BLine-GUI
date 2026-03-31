@@ -131,6 +131,23 @@ class MainWindow(WindowEventMixin, QMainWindow):
         except Exception:
             pass
 
+        # Constraint popout <-> canvas sync
+        try:
+            self.sidebar.popoutOpened.connect(
+                lambda: self.canvas.set_constraint_popout_active(True)
+            )
+            self.sidebar.popoutClosed.connect(
+                lambda: self.canvas.set_constraint_popout_active(False)
+            )
+            self.sidebar.popoutSegmentSelected.connect(
+                lambda key, s, e: self.canvas.set_constraint_segment_highlight(key, s, e)
+            )
+            self.canvas.constraintElementClicked.connect(
+                self.sidebar.constraint_manager.handle_canvas_element_clicked
+            )
+        except Exception:
+            pass
+
         # Sidebar changes -> canvas refresh
         self.sidebar.modelChanged.connect(self.canvas.refresh_from_model)
         self.sidebar.modelChanged.connect(self.canvas.update_handoff_radius_visualizers)

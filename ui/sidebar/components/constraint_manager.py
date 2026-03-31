@@ -40,6 +40,12 @@ class ConstraintManager(QObject):
     constraintRangePreviewRequested = Signal(str, int, int)  # key, start_ordinal, end_ordinal
     constraintRangePreviewCleared = Signal()
 
+    # Popout lifecycle signals
+    popoutOpened = Signal()
+    popoutClosed = Signal()
+    # Emitted when a segment is selected in the popout: key, start_ordinal, end_ordinal
+    popoutSegmentSelected = Signal(str, int, int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.path = None  # type: Optional[Path]
@@ -848,6 +854,108 @@ class ConstraintManager(QObject):
                     container.setVisible(False)
             except Exception:
                 pass  # widget may be destroyed
+
+    # ------------------------------------------------------------------
+    # Popout dialog
+    # ------------------------------------------------------------------
+
+    def open_popout(self):
+        """Open or raise the constraint popout dialog."""
+        if self.path is None:
+            return
+        from ui.sidebar.dialogs.constraint_popout import ConstraintPopout
+
+        if self._popout_dialog is not None:
+            try:
+                self._popout_dialog.set_path(self.path)
+                self._popout_dialog.show()
+                self._popout_dialog.raise_()
+                self._popout_dialog.activateWindow()
+                return
+            except Exception:
+                self._popout_dialog = None
+
+        self._popout_dialog = ConstraintPopout(self.path)
+        self._popout_dialog.closed.connect(self._on_popout_closed)
+        self._popout_dialog.modelChanged.connect(self._on_popout_model_changed)
+        self._popout_dialog.segmentSelectedInPopout.connect(self._on_popout_segment_selected)
+        self._popout_dialog.show()
+        self.popoutOpened.emit()
+
+    def _on_popout_closed(self):
+        """Handle popout dialog closing."""
+        self._popout_dialog = None
+        self.popoutClosed.emit()
+
+    def _on_popout_model_changed(self):
+        """Handle model changes from the popout dialog."""
+        # Rebuild sidebar segment bars to reflect popout edits
+        for key in list(self._segment_bars.keys()):
+            try:
+                self._rebuild_segment_bar_for_key(key)
+            except Exception:
+                pass
+        # Forward the change
+        try:
+            self.constraintRangeChanged.emit("", 0, 0)
+        except Exception:
+            pass
+
+    def _on_popout_segment_selected(self, key: str, segment_index: int):
+        """Handle segment selection in the popout -- emit highlight info."""
+        rc_list = [
+            rc for rc in (self.path.ranged_constraints or []) if rc.key == key
+        ]
+        rc_list.sort(key=lambda rc: rc.start_ordinal)
+        if 0 <= segment_index < len(rc_list):
+            rc = rc_list[segment_index]
+            self.popoutSegmentSelected.emit(key, rc.start_ordinal, rc.end_ordinal)
+
+    def handle_canvas_element_clicked(self, global_index: int):
+        """Handle a canvas element click while popout is active.
+
+        Finds which constraint segment contains the clicked element and
+        selects it in the popout dialog.
+        """
+        if self._popout_dialog is None or self.path is None:
+            return
+        if global_index < 0 or global_index >= len(self.path.path_elements):
+            return
+
+        from models.path_model import (
+            TranslationTarget,
+            Waypoint,
+            RotationTarget,
+            EventTrigger,
+        )
+
+        element = self.path.path_elements[global_index]
+
+        # For each active key in the popout, figure out the ordinal
+        TRANSLATION_KEYS = {"max_velocity_meters_per_sec", "max_acceleration_meters_per_sec2"}
+
+        for key, row in self._popout_dialog._rows.items():
+            if key in TRANSLATION_KEYS:
+                domain_types = (TranslationTarget, Waypoint)
+            else:
+                domain_types = (Waypoint, RotationTarget, EventTrigger)
+
+            if not isinstance(element, domain_types):
+                continue
+
+            # Calculate the ordinal for this element in the domain
+            ordinal = 0
+            for i, elem in enumerate(self.path.path_elements):
+                if isinstance(elem, domain_types):
+                    ordinal += 1
+                    if i == global_index:
+                        break
+
+            if ordinal == 0:
+                continue
+
+            # Find the segment containing this ordinal
+            self._popout_dialog.highlight_ordinals(key, [ordinal])
 
     def set_active_preview_key(self, key: str):
         """Set the active constraint preview key and emit preview signal."""

@@ -8,7 +8,7 @@ with MainWindow and Sidebar interactions. Further pruning can follow.
 
 from __future__ import annotations
 import math
-from typing import List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any
 from PySide6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
@@ -84,6 +84,7 @@ class CanvasView(QGraphicsView):
     elementDragFinished = Signal(int)
     deleteSelectedRequested = Signal()
     rotationDragFinished = Signal(int)
+    constraintElementClicked = Signal(int)  # global element index clicked while popout active
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -175,6 +176,10 @@ class CanvasView(QGraphicsView):
         self.transport.ensure()
         self._range_overlay_lines: List[QGraphicsLineItem] = []
         self._range_overlay_saved_item_styles: dict[QGraphicsItem, Tuple[QPen, QBrush]] = {}
+        # Constraint popout sync state
+        self._constraint_popout_active: bool = False
+        self._constraint_highlight_indices: List[int] = []  # global indices to highlight
+        self._constraint_highlight_saved_styles: Dict[int, Tuple[QPen, QBrush]] = {}  # saved for restoration
 
     # ---------------- Field Background ----------------
     def _load_field_background(self, image_path: str):
@@ -1063,6 +1068,11 @@ class CanvasView(QGraphicsView):
 
     def _on_item_clicked(self, index: int):
         self.elementSelected.emit(index)
+        if self._constraint_popout_active:
+            try:
+                self.constraintElementClicked.emit(index)
+            except Exception:
+                pass
 
     # -------- Coordinate conversion --------
     def _scene_from_model(self, x_m: float, y_m: float) -> QPointF:
@@ -1975,3 +1985,91 @@ class CanvasView(QGraphicsView):
                 self._range_overlay_lines.append(line)
             except Exception:
                 continue
+
+    # ---- Constraint popout canvas sync ----
+    def set_constraint_popout_active(self, active: bool):
+        """Enable/disable canvas-popout sync mode."""
+        self._constraint_popout_active = active
+        if not active:
+            self._clear_constraint_highlight()
+
+    def set_constraint_segment_highlight(self, key: str, start_ordinal: int, end_ordinal: int):
+        """Highlight path elements corresponding to a selected constraint segment.
+
+        Converts ordinals in the constraint's domain to global element indices,
+        then visually highlights those elements on the canvas.
+        """
+        self._clear_constraint_highlight()
+
+        if not self._path or not start_ordinal or not end_ordinal:
+            return
+
+        TRANSLATION_KEYS = {"max_velocity_meters_per_sec", "max_acceleration_meters_per_sec2"}
+
+        # Build domain-to-global index mapping
+        if key in TRANSLATION_KEYS:
+            domain_types = (TranslationTarget, Waypoint)
+        else:
+            domain_types = (Waypoint, RotationTarget, EventTrigger)
+
+        ordinal = 0
+        highlight_indices: List[int] = []
+        for i, elem in enumerate(self._path.path_elements):
+            if isinstance(elem, domain_types):
+                ordinal += 1
+                if start_ordinal <= ordinal <= end_ordinal:
+                    highlight_indices.append(i)
+
+        self._constraint_highlight_indices = highlight_indices
+        self._apply_constraint_highlight()
+
+    def _apply_constraint_highlight(self):
+        """Apply visual highlight to elements in _constraint_highlight_indices."""
+        highlight_color = QColor("#2d6a9f")
+        for idx in self._constraint_highlight_indices:
+            if idx < 0 or idx >= len(self._items):
+                continue
+            try:
+                _kind, item, _handle = self._items[idx]
+                if item is None:
+                    continue
+                # Save current pen and brush for restoration
+                old_pen = item.pen() if hasattr(item, "pen") else None
+                old_brush = item.brush() if hasattr(item, "brush") else None
+                self._constraint_highlight_saved_styles[idx] = (old_pen, old_brush)
+                # Apply highlight pen (preserve width from original)
+                width = old_pen.widthF() if old_pen is not None else CONNECT_LINE_THICKNESS_M
+                hl_pen = QPen(highlight_color, max(width, CONNECT_LINE_THICKNESS_M * 1.5))
+                hl_pen.setCapStyle(Qt.RoundCap)
+                hl_pen.setJoinStyle(Qt.RoundJoin)
+                hl_pen.setCosmetic(False)
+                item.setPen(hl_pen)
+            except Exception:
+                pass
+        try:
+            self.scene().update()
+        except Exception:
+            pass
+
+    def _clear_constraint_highlight(self):
+        """Remove all constraint highlights from the canvas."""
+        # Restore saved styles
+        for idx, (old_pen, old_brush) in list(self._constraint_highlight_saved_styles.items()):
+            if idx < 0 or idx >= len(self._items):
+                continue
+            try:
+                _kind, item, _handle = self._items[idx]
+                if item is None:
+                    continue
+                if old_pen is not None and hasattr(item, "setPen"):
+                    item.setPen(old_pen)
+                if old_brush is not None and hasattr(item, "setBrush"):
+                    item.setBrush(old_brush)
+            except Exception:
+                pass
+        self._constraint_highlight_saved_styles.clear()
+        self._constraint_highlight_indices = []
+        try:
+            self.scene().update()
+        except Exception:
+            pass
