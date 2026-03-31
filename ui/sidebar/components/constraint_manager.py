@@ -1,8 +1,9 @@
 # mypy: ignore-errors
-"""Constraint manager component for handling path constraints and range sliders."""
+"""Constraint manager component for handling path constraints and segment bars."""
 
 from typing import Dict, Optional, Tuple, Any, List
 import math
+import traceback
 from PySide6.QtCore import QObject, Signal, QTimer, QEvent
 from PySide6.QtWidgets import (
     QWidget,
@@ -13,17 +14,18 @@ from PySide6.QtWidgets import (
     QPushButton,
     QHBoxLayout,
 )
-from PySide6.QtGui import QCursor, QMouseEvent, QIcon
+from PySide6.QtGui import QCursor, QMouseEvent, QIcon, QColor
 from PySide6.QtCore import QSize
 from models.path_model import Path, RangedConstraint
-from ..widgets import RangeSlider, NoWheelDoubleSpinBox
+from ..widgets import NoWheelDoubleSpinBox
 from ..utils import SPINNER_METADATA, PATH_CONSTRAINT_KEYS, NON_RANGED_CONSTRAINT_KEYS
+from ui.sidebar.widgets.segment_bar import SegmentBar, SegmentData, SEGMENT_COLORS
 
 from ui.qt_compat import Qt, QSizePolicy, QFormLayoutRoles
 
 
 class ConstraintManager(QObject):
-    """Manages path constraints and their UI representations including range sliders."""
+    """Manages path constraints and their UI representations including segment bars."""
 
     # Signals
     constraintAdded = Signal(str, float)  # key, value
@@ -42,20 +44,16 @@ class ConstraintManager(QObject):
         super().__init__(parent)
         self.path = None  # type: Optional[Path]
         self.project_manager = None  # Set externally for config access
-        # Track inline range slider containers (one container per key holding all its instances)
-        self._range_slider_rows = {}
-        # For each key store list of sliders (one per ranged constraint instance)
-        self._range_sliders = {}
-        # For each key store list of spin boxes (first one is the original from property editor)
-        self._range_spinboxes = {}
         self._active_preview_key = None
         # Map of constraint key -> field container used in constraints layout
         self._constraint_field_containers = {}
-        # Track previous slider values to detect and block overlapping moves
-        self._slider_prev_values: Dict[RangeSlider, Tuple[int, int]] = {}
-        self._enforcing_slider_constraints: bool = False
-        # Unique id assignment for ranged constraint instances to survive deep copies
-        self._rc_uid_seq: int = 1
+        # Segment bar state
+        self._segment_bars: Dict[str, SegmentBar] = {}
+        self._segment_spinboxes: Dict[str, QDoubleSpinBox] = {}
+        self._segment_rc_lists: Dict[str, List[RangedConstraint]] = {}
+        self._selected_segment_indices: Dict[str, int] = {}
+        self._popout_dialog = None
+        self._boundary_drag_started: bool = False
 
     def set_path(self, path: Path):
         """Set the path to manage constraints for."""
@@ -295,18 +293,10 @@ class ConstraintManager(QObject):
             container = self._constraint_field_containers.get(key, None)
         except Exception:
             container = None
-        try:
-            self._range_slider_rows.pop(key, None)
-        except Exception:
-            pass
-        try:
-            self._range_sliders.pop(key, None)
-        except Exception:
-            pass
-        try:
-            self._range_spinboxes.pop(key, None)
-        except Exception:
-            pass
+        self._segment_bars.pop(key, None)
+        self._segment_spinboxes.pop(key, None)
+        self._segment_rc_lists.pop(key, None)
+        self._selected_segment_indices.pop(key, None)
         if container is not None:
             try:
                 container.setVisible(False)
@@ -379,27 +369,28 @@ class ConstraintManager(QObject):
             )
             return "rotation", int(count)
 
-    def create_range_slider_for_key(
+    def create_segment_bar_for_key(
         self,
         key: str,
         control: QDoubleSpinBox,
         spin_row: QWidget,
         label_widget: QLabel,
         constraints_layout: QFormLayout,
-    ) -> RangeSlider:
-        """Create or update a range slider for a constraint key."""
+    ) -> Optional[SegmentBar]:
+        """Create or update a segment bar for a constraint key."""
         domain, count = self.get_domain_info_for_key(key)
         total = max(1, count)
-        slider_max = total + 1  # one extra notch beyond the last anchor
 
         # Build / rebuild UI for ALL ranged instances of this key.
-        # Gather current ranged constraints for this key
+        # Gather current ranged constraints for this key, sorted by start_ordinal
         ranged_list = [
             rc for rc in (getattr(self.path, "ranged_constraints", []) or []) if rc.key == key
         ]
         if not ranged_list:
             # Nothing to build yet (should not happen if caller added constraint earlier)
             return None
+        ranged_list.sort(key=lambda rc: rc.start_ordinal)
+        self._segment_rc_lists[key] = ranged_list
 
         # Ensure container exists and wraps the original spin_row
         field_container = self._constraint_field_containers.get(key)
@@ -504,615 +495,115 @@ class ConstraintManager(QObject):
             else:
                 vbox.removeItem(item)
 
-        # Prepare lists
-        sliders: List[RangeSlider] = []
-        spins: List[QDoubleSpinBox] = []
-
-        # The first spinbox is the provided control for instance index 0
-        spins.append(control)
-
-        # Helper to create slider/spinner pair for given instance index
-        def _make_slider_for_instance(instance_index: int, rc_obj):
-            # Ensure a stable UI id on the ranged constraint; deep copies preserve attributes
-            try:
-                uid = getattr(rc_obj, "_ui_instance_id", None)
-                if uid is None:
-                    setattr(rc_obj, "_ui_instance_id", int(self._rc_uid_seq))
-                    uid = int(self._rc_uid_seq)
-                    self._rc_uid_seq += 1
-            except Exception:
-                uid = None
-
-            def _resolve_current_rc():
-                try:
-                    if self.path is None:
-                        return None
-                    target_uid = getattr(rc_obj, "_ui_instance_id", None)
-                    for r in getattr(self.path, "ranged_constraints", []) or []:
-                        try:
-                            if (
-                                getattr(r, "key", None) == key
-                                and getattr(r, "_ui_instance_id", None) == target_uid
-                            ):
-                                return r
-                        except Exception:
-                            continue
-                except Exception:
-                    return None
-                return None
-
-            # Determine low/high from model
-            low_i_model = int(getattr(rc_obj, "start_ordinal", 1))
-            high_i_model = int(getattr(rc_obj, "end_ordinal", total))
-            # Map model (1-based inclusive) -> slider handles (left=start, right=end+1)
-            low_i = max(1, min(low_i_model, total))
-            high_i = max(2, min(high_i_model + 1, slider_max))
-            sld = RangeSlider(1, slider_max)
-            sld.setValues(low_i, high_i)
-            sld.setFocusPolicy(Qt.StrongFocus)
-            # Initialize previous values tracker for overlap enforcement
-            self._slider_prev_values[sld] = (int(low_i), int(high_i))
-
-            def _preview():
-                l, h = sld.values()
-                # Block moves that would create overlap with other sliders for this key
-                if self._would_overlap_for_key(key, sld, int(l), int(h)):
-                    # Revert to previous valid values
-                    prev_l, prev_h = self._slider_prev_values.get(sld, (int(l), int(h)))
-                    sld._setValuesInternal(int(prev_l), int(prev_h))
-                    return
-                # Slider positions are conceptually 0-based; model ordinals are 1-based
-                # start = left_position (0-based) -> +1 => l
-                # end = right_position - 1 (0-based) -> +1 => (h - 1)
-                start1 = max(1, min(int(l), int(total)))
-                end1 = max(1, min(int(h - 1), int(total)))
-                self._active_preview_key = key
-                self.constraintRangePreviewRequested.emit(key, start1, end1)
-                # Live-apply previewed range to the model so simulation can rebuild in real time
-                try:
-                    rc_live = _resolve_current_rc()
-                    if rc_live is None:
-                        rc_live = rc_obj
-                    rc_live.start_ordinal = int(start1)
-                    rc_live.end_ordinal = int(end1)
-                except Exception:
-                    pass
-                # Accept move; update previous
-                self._slider_prev_values[sld] = (int(l), int(h))
-
-            def _commit():
-                l, h = sld.values()
-                blocked = False
-                if self._would_overlap_for_key(key, sld, int(l), int(h)):
-                    # Revert to previous and treat as commit of previous
-                    prev_l, prev_h = self._slider_prev_values.get(sld, (int(l), int(h)))
-                    sld._setValuesInternal(int(prev_l), int(prev_h))
-                    l, h = int(prev_l), int(prev_h)
-                    blocked = True
-                # Map slider handles (1..total+1) -> model ordinals (1..total)
-                start1 = max(1, min(int(l), int(total)))
-                end1 = max(1, min(int(h - 1), int(total)))
-                # Announce about-to-change for undo snapshot
-                try:
-                    label = SPINNER_METADATA.get(key, {}).get("label", key).replace("<br/>", " ")
-                    self.aboutToChange.emit(f"Edit Range: {label}")
-                except Exception:
-                    pass
-                try:
-                    rc_live = _resolve_current_rc()
-                    if rc_live is None:
-                        rc_live = rc_obj
-                    rc_live.start_ordinal = int(start1)
-                    rc_live.end_ordinal = int(end1)
-                except Exception:
-                    pass
-                self.constraintRangeChanged.emit(key, start1, end1)
-                self._active_preview_key = key
-                self.constraintRangePreviewRequested.emit(key, start1, end1)
-                try:
-                    self.userActionOccurred.emit(f"Edit Range: {label}")
-                except Exception:
-                    pass
-                # Update previous only if not blocked (or to the reverted values we used)
-                self._slider_prev_values[sld] = (int(l), int(h))
-
-            sld.rangeChanged.connect(lambda _l, _h: _preview())
-            sld.interactionFinished.connect(
-                lambda _l, _h: (setattr(self, "_active_preview_key", key), _commit())
-            )
-            return sld
-
-        # Helper: ensure the base spin_row has no stale sliders before rebuilding
-        def _remove_existing_sliders_from_row(row_widget: QWidget):
-            try:
-                row_layout = row_widget.layout()
-                if row_layout is None:
-                    return
-                # Iterate backwards when removing
-                for idx_rm in range(row_layout.count() - 1, -1, -1):
-                    it = row_layout.itemAt(idx_rm)
-                    if it is None:
-                        continue
-                    w = it.widget()
-                    if w is not None and isinstance(w, RangeSlider):
-                        try:
-                            row_layout.removeWidget(w)
-                        except Exception:
-                            pass
-                        w.deleteLater()
-            except Exception:
-                pass
-
-        _remove_existing_sliders_from_row(spin_row)
-
-        # Build UI for each instance
         # Sanitize any invalid ordinals without repositioning existing ranges
-        def _normalize_instances(instances: List[Any]):
-            try:
-                for rc in instances:
-                    l = int(getattr(rc, "start_ordinal", 1))
-                    h = int(getattr(rc, "end_ordinal", total))
-                    # Clamp to bounds and ensure non-empty [l, h]
-                    l = max(1, min(l, total))
-                    h = max(1, min(h, total))
-                    if h < l:
-                        h = l
-                    setattr(rc, "start_ordinal", int(l))
-                    setattr(rc, "end_ordinal", int(h))
-            except Exception:
-                pass
+        for rc in ranged_list:
+            l = int(getattr(rc, "start_ordinal", 1))
+            h = int(getattr(rc, "end_ordinal", total))
+            l = max(1, min(l, total))
+            h = max(l, min(h, total))
+            rc.start_ordinal = int(l)
+            rc.end_ordinal = int(h)
 
-        _normalize_instances(ranged_list)
+        # Hide the original spin_row -- we replace it with our own controls row
+        spin_row.setVisible(False)
 
-        for idx, rc_obj in enumerate(ranged_list):
-            # Determine spinbox to use
-            if idx == 0:
-                spinbox = control
-                # Initialize value
-                try:
-                    spinbox.blockSignals(True)
-                    spinbox.setValue(float(getattr(rc_obj, "value", control.value())))
-                finally:
-                    spinbox.blockSignals(False)
-                # Mark the base row widget to receive the rounded row styling
-                try:
-                    group_name = spin_row.property("constraintGroup") or spin_row.property(
-                        "constraintGroup"
-                    )
-                    if group_name is None:
-                        # Inherit from container's original row
-                        group_name = getattr(spin_row, "property", lambda *_: None)(
-                            "constraintGroup"
-                        )
-                    if group_name is not None:
-                        spin_row.setProperty("constraintGroup", group_name)
-                    spin_row.setProperty("constraintRow", "true")
-                    # Ensure row has sufficient height to show border
-                    try:
-                        spin_row.setMinimumHeight(32)
-                        spin_row.setMaximumHeight(44)
-                    except Exception:
-                        pass
-                    # Repolish to apply dynamic property style
-                    try:
-                        st = spin_row.style()
-                        st.unpolish(spin_row)
-                        st.polish(spin_row)
-                        spin_row.update()
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-            else:
-                # Create a new spin row with spinbox only (no remove button) per spec
-                spin_row_extra = QWidget()
-                spin_row_layout = QHBoxLayout(spin_row_extra)
-                # Add inner padding around controls and slider (match base row bottom padding)
-                spin_row_layout.setContentsMargins(8, 8, 8, 8)
-                spin_row_layout.setSpacing(8)
-                try:
-                    spin_row_extra.setMinimumHeight(32)
-                    spin_row_extra.setMaximumHeight(44)
-                    spin_row_extra.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                except Exception:
-                    pass
-                spinbox = NoWheelDoubleSpinBox()
-                meta = SPINNER_METADATA.get(key, {})
-                spinbox.setSingleStep(meta.get("step", 0.1))
-                rmin, rmax = meta.get("range", (0.0, 9999.0))
-                spinbox.setRange(rmin, rmax)
-                try:
-                    spinbox.setDecimals(3)
-                    spinbox.setKeyboardTracking(False)
-                except Exception:
-                    pass
-                try:
-                    spinbox.setValue(float(getattr(rc_obj, "value", 0.0)))
-                except Exception:
-                    pass
-                # Enforce uniform width matching the base control if possible
-                try:
-                    spinbox.setMinimumWidth(90)
-                    spinbox.setMaximumWidth(160)
-                    spinbox.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-                except Exception:
-                    pass
-                # Remove instance button
-                remove_btn = QPushButton()
-                try:
-                    remove_btn.setIcon(QIcon(":/assets/remove_icon.png"))
-                    remove_btn.setFixedSize(16, 16)
-                    remove_btn.setIconSize(QSize(14, 14))
-                    remove_btn.setStyleSheet(
-                        "QPushButton { border: none; } QPushButton:hover { background: #555; border-radius: 3px; }"
-                    )
-                except Exception:
-                    pass
+        # Create the SegmentBar widget
+        from ui.sidebar.utils.constants import SPINNER_UNITS
+        color = SEGMENT_COLORS.get(key, QColor("#666666"))
+        bar = SegmentBar()
+        bar.set_domain_size(total)
+        segments = [SegmentData(rc.start_ordinal, rc.end_ordinal, rc.value, color) for rc in ranged_list]
+        bar.set_segments(segments)
+        unit_suffix = SPINNER_UNITS.get(key, "")
+        bar.set_unit_suffix(unit_suffix)
+        bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        vbox.addWidget(bar)
+        self._segment_bars[key] = bar
 
-                def _make_remove_handler(target_rc):
-                    def _remove():
-                        # Announce about-to-change for undo snapshot
-                        try:
-                            label = (
-                                SPINNER_METADATA.get(key, {})
-                                .get("label", key)
-                                .replace("<br/>", " ")
-                            )
-                            self.aboutToChange.emit(f"Remove {label}")
-                        except Exception:
-                            pass
-                        try:
-                            rc_list = getattr(self.path, "ranged_constraints", []) or []
-                            removed = False
-                            # First try strict identity removal
-                            new_list = []
-                            for rc in rc_list:
-                                if not removed and rc is target_rc:
-                                    removed = True
-                                    continue
-                                new_list.append(rc)
-                            if not removed:
-                                # Fall back to signature-based removal (handles deep-copied model after undo snapshot)
-                                try:
-                                    t_key = getattr(target_rc, "key", None)
-                                    t_l = int(getattr(target_rc, "start_ordinal", 1))
-                                    t_h = int(getattr(target_rc, "end_ordinal", 1))
-                                    t_val = getattr(target_rc, "value", None)
-                                except Exception:
-                                    t_key, t_l, t_h, t_val = None, None, None, None
-                                new_list2 = []
-                                matched_once = False
-                                for rc in rc_list:
-                                    try:
-                                        if (
-                                            not matched_once
-                                            and getattr(rc, "key", None) == t_key
-                                            and int(getattr(rc, "start_ordinal", -1)) == int(t_l)
-                                            and int(getattr(rc, "end_ordinal", -1)) == int(t_h)
-                                            and getattr(rc, "value", None) == t_val
-                                        ):
-                                            matched_once = True
-                                            continue
-                                    except Exception:
-                                        pass
-                                    new_list2.append(rc)
-                                if matched_once:
-                                    new_list = new_list2
-                                    removed = True
-                            if removed:
-                                self.path.ranged_constraints = new_list
-                        except Exception:
-                            pass
-                        # If no instances left for key, emit full removal and return
-                        remaining = [
-                            rc
-                            for rc in (getattr(self.path, "ranged_constraints", []) or [])
-                            if getattr(rc, "key", None) == key
-                        ]
-                        if not remaining:
-                            # Fully remove constraint entry and its UI container
-                            try:
-                                self._remove_container_for_key(key)
-                            except Exception:
-                                pass
-                            self.constraintRemoved.emit(key)
-                            try:
-                                self.userActionOccurred.emit(f"Remove {label}")
-                            except Exception:
-                                pass
-                            return
-                        # Rebuild UI for remaining instances
-                        try:
-                            self.create_range_slider_for_key(
-                                key, control, spin_row, label_widget, constraints_layout
-                            )
-                        except Exception:
-                            pass
-                        # Refresh preview to first instance
-                        try:
-                            self.set_active_preview_key(key)
-                        except Exception:
-                            pass
-                        try:
-                            self.userActionOccurred.emit(f"Remove {label}")
-                        except Exception:
-                            pass
+        # Connect SegmentBar signals
+        bar.segmentSelected.connect(lambda idx, k=key: self._on_segment_selected(k, idx))
+        bar.segmentBoundaryDragged.connect(
+            lambda seg_idx, ns, ne, k=key: self._on_segment_boundary_dragged(k, seg_idx, ns, ne)
+        )
+        bar.segmentBoundaryDragFinished.connect(lambda k=key: self._on_segment_boundary_drag_finished(k))
+        bar.gapDoubleClicked.connect(lambda gs, ge, k=key: self._on_gap_double_clicked(k, gs, ge))
+        bar.deleteRequested.connect(lambda seg_idx, k=key: self._on_segment_delete_requested(k, seg_idx))
+        bar.splitRequested.connect(lambda seg_idx, k=key: self._on_segment_split_requested(k, seg_idx))
 
-                    return _remove
+        # Create controls row: spinbox + Delete + Split
+        controls_row = QWidget()
+        controls_layout = QHBoxLayout(controls_row)
+        controls_layout.setContentsMargins(4, 4, 4, 4)
+        controls_layout.setSpacing(6)
+        controls_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        controls_row.setMinimumHeight(32)
+        controls_row.setMaximumHeight(44)
 
-                remove_btn.clicked.connect(_make_remove_handler(rc_obj))
+        # Style the controls row
+        try:
+            group_name = spin_row.property("constraintGroup")
+            if group_name is not None:
+                controls_row.setProperty("constraintGroup", group_name)
+            controls_row.setProperty("constraintRow", "true")
+        except Exception:
+            pass
 
-                # Set styling properties to align with the group for consistent background
-                try:
-                    group_name = spin_row.property("constraintGroup")
-                    if group_name is not None:
-                        spin_row_extra.setProperty("constraintGroup", group_name)
-                    spin_row_extra.setProperty("constraintRow", "true")
-                    # Repolish to apply dynamic property style
-                    try:
-                        st2 = spin_row_extra.style()
-                        st2.unpolish(spin_row_extra)
-                        st2.polish(spin_row_extra)
-                        spin_row_extra.update()
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
+        # Spinbox (reuse the provided control)
+        spinbox = control
+        try:
+            spinbox.blockSignals(True)
+            if ranged_list:
+                spinbox.setValue(float(ranged_list[0].value))
+        finally:
+            spinbox.blockSignals(False)
+        spinbox.setMinimumWidth(90)
+        spinbox.setMaximumWidth(160)
+        spinbox.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        # Reparent spinbox into controls row
+        spinbox.setParent(controls_row)
+        controls_layout.addWidget(spinbox)
+        self._segment_spinboxes[key] = spinbox
 
-                # Initially add only the spinbox; slider and remove button are positioned below
-                spin_row_layout.addWidget(spinbox)
-                # Slider and remove_btn will be positioned after slider creation
-                vbox.addWidget(spin_row_extra)
-            spins.append(spinbox)
+        # Connect spinbox value changes to update selected segment
+        spinbox.valueChanged.connect(lambda v, k=key: self._on_segment_spinbox_changed(k, v))
 
-            # Connect value change per instance
-            def _make_value_handler(target_rc, is_primary: bool):
-                def _handler(v):
-                    # Primary instance (idx==0) changes already go through Sidebar.on_attribute_change
-                    # and are snapshot by Sidebar/MainWindow. Only emit undo signals for extra instances.
-                    if not is_primary:
-                        try:
-                            label = (
-                                SPINNER_METADATA.get(key, {})
-                                .get("label", key)
-                                .replace("<br/>", " ")
-                            )
-                            self.aboutToChange.emit(f"Edit Path Constraint: {label}")
-                        except Exception:
-                            pass
-                    # Resolve to the live ranged constraint instance by _ui_instance_id to avoid
-                    # updating a stale deep-copied object after autosave/undo refreshes.
-                    rc_live = target_rc
-                    try:
-                        target_uid = getattr(target_rc, "_ui_instance_id", None)
-                        if target_uid is not None and self.path is not None:
-                            for r in getattr(self.path, "ranged_constraints", []) or []:
-                                try:
-                                    if (
-                                        getattr(r, "key", None) == key
-                                        and getattr(r, "_ui_instance_id", None) == target_uid
-                                    ):
-                                        rc_live = r
-                                        break
-                                except Exception:
-                                    continue
-                    except Exception:
-                        rc_live = target_rc
-                    self._update_single_ranged_constraint_value(key, rc_live, float(v))
-                    if not is_primary:
-                        try:
-                            self.userActionOccurred.emit(f"Edit Path Constraint: {label}")
-                        except Exception:
-                            pass
+        controls_layout.addStretch()
 
-                return _handler
+        # Delete button
+        del_btn = QPushButton()
+        del_btn.setIcon(QIcon(":/assets/remove_icon.png"))
+        del_btn.setFixedSize(24, 24)
+        del_btn.setIconSize(QSize(16, 16))
+        del_btn.setToolTip("Delete selected segment")
+        del_btn.setStyleSheet(
+            "QPushButton { border: none; } QPushButton:hover { background: #555; border-radius: 3px; }"
+        )
+        del_btn.clicked.connect(lambda checked=False, k=key: self._on_segment_delete_requested(
+            k, self._selected_segment_indices.get(k, -1)
+        ))
+        controls_layout.addWidget(del_btn)
 
-            spinbox.valueChanged.connect(_make_value_handler(rc_obj, idx == 0))
+        # Split button
+        split_btn = QPushButton("Split")
+        split_btn.setFixedHeight(24)
+        split_btn.setToolTip("Split selected segment at midpoint")
+        split_btn.setStyleSheet(
+            "QPushButton { border: 1px solid #555; border-radius: 3px; padding: 2px 8px; color: #ccc; }"
+            " QPushButton:hover { background: #555; }"
+        )
+        split_btn.clicked.connect(lambda checked=False, k=key: self._on_segment_split_requested(
+            k, self._selected_segment_indices.get(k, -1)
+        ))
+        controls_layout.addWidget(split_btn)
 
-            # While interacting with the spinbox, also show the corresponding range preview
-            def _emit_preview_for_spinbox(instance_idx=idx):
-                """Emit preview signal for spinbox changes."""
-                # Find the correct constraint instance for this spinbox
-                # Use the instance index and key to identify the correct constraint
-                if self.path is None:
-                    return
-
-                ranged_constraints = getattr(self.path, "ranged_constraints", []) or []
-                matching_constraints = [
-                    rc for rc in ranged_constraints if getattr(rc, "key", None) == key
-                ]
-
-                if instance_idx < len(matching_constraints):
-                    rc_live = matching_constraints[instance_idx]
-                else:
-                    # Fallback to the original rc_obj
-                    rc_live = rc_obj
-
-                # Use the actual constraint ordinals for preview
-                start_ord = max(1, min(int(getattr(rc_live, "start_ordinal", 1)), int(total)))
-                end_ord = max(1, min(int(getattr(rc_live, "end_ordinal", total)), int(total)))
-
-                self._active_preview_key = key
-                self.constraintRangePreviewRequested.emit(key, start_ord, end_ord)
-
-            try:
-                spinbox.valueChanged.connect(lambda _v, i=idx: _emit_preview_for_spinbox(i))
-                spinbox.editingFinished.connect(lambda i=idx: _emit_preview_for_spinbox(i))
-            except Exception:
-                pass
-
-            # Create and add slider on the same row as the spinbox
-            sld = _make_slider_for_instance(idx, rc_obj)
-            try:
-                row_widget = spin_row if idx == 0 else spin_row_extra
-                row_layout = row_widget.layout()
-                if row_layout is not None:
-                    # For the base row, move the remove button to the far right after the slider
-                    remove_btn_widget = None
-                    current_remove_btn = None
-                    if idx > 0:
-                        current_remove_btn = remove_btn
-                    # Extract any existing QPushButton (remove button) and spacers for reordering
-                    for j in range(row_layout.count() - 1, -1, -1):
-                        it = row_layout.itemAt(j)
-                        if it is None:
-                            continue
-                        w = it.widget()
-                        if w is not None and isinstance(w, QPushButton):
-                            remove_btn_widget = w
-                            try:
-                                row_layout.removeWidget(w)
-                            except Exception:
-                                pass
-                        elif it.spacerItem() is not None:
-                            try:
-                                row_layout.removeItem(it)
-                            except Exception:
-                                pass
-                    # Ensure spinbox has a fixed width for uniformity
-                    try:
-                        if isinstance(spins[-1], QDoubleSpinBox):
-                            spins[-1].setMinimumWidth(90)
-                            spins[-1].setMaximumWidth(160)
-                            spins[-1].setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-                    except Exception:
-                        pass
-
-                    # Add slider with expanding policy
-                    try:
-                        sld.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                    except Exception:
-                        pass
-                    row_layout.addWidget(sld)
-                    # Stretch to push the remove button to the far right
-                    row_layout.addStretch()
-                    # Add or re-add the remove button at the end
-                    if remove_btn_widget is not None:
-                        row_layout.addWidget(remove_btn_widget)
-                    elif current_remove_btn is not None:
-                        row_layout.addWidget(current_remove_btn)
-            except Exception:
-                # Fallback: if layout missing, add as separate row
-                vbox.addWidget(sld)
-            sliders.append(sld)
-
-            # Link focus on this spinbox to preview its slider range on the canvas
-            try:
-                orig_focus_in = spinbox.focusInEvent
-            except Exception:
-                orig_focus_in = None
-
-            def _focus_in(ev, _spin=spinbox, _orig=orig_focus_in, instance_idx=idx):
-                try:
-                    # Find the correct constraint instance for this spinbox
-                    if self.path is None:
-                        return
-
-                    ranged_constraints = getattr(self.path, "ranged_constraints", []) or []
-                    matching_constraints = [
-                        rc for rc in ranged_constraints if getattr(rc, "key", None) == key
-                    ]
-
-                    if instance_idx < len(matching_constraints):
-                        rc_live = matching_constraints[instance_idx]
-                    else:
-                        rc_live = rc_obj
-
-                    # Use the actual constraint ordinals for preview
-                    start_ord = max(1, min(int(getattr(rc_live, "start_ordinal", 1)), int(total)))
-                    end_ord = max(1, min(int(getattr(rc_live, "end_ordinal", total)), int(total)))
-
-                    self._active_preview_key = key
-                    self.constraintRangePreviewRequested.emit(key, start_ord, end_ord)
-                except Exception:
-                    pass
-                try:
-                    if _orig is not None:
-                        _orig(ev)
-                except Exception:
-                    try:
-                        from PySide6.QtWidgets import QDoubleSpinBox
-
-                        QDoubleSpinBox.focusInEvent(_spin, ev)
-                    except Exception:
-                        pass
-
-            try:
-                spinbox.focusInEvent = _focus_in
-            except Exception:
-                pass
-
-            # Also emit preview on mouse press/double-click within the spinbox (or its child editor)
-            try:
-                from PySide6.QtCore import QObject, QEvent
-
-                class SpinboxPreviewFilter(QObject):
-                    def __init__(self, callback):
-                        super().__init__()
-                        self._cb = callback
-
-                    def eventFilter(self, obj, event):
-                        try:
-                            et = event.type()
-                            if et in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick):
-                                self._cb()
-                                return False
-                        except Exception:
-                            pass
-                        return False
-
-                def _emit_preview_from_spin(instance_idx=idx):
-                    try:
-                        # Find the correct constraint instance for this spinbox
-                        if self.path is None:
-                            return
-
-                        ranged_constraints = getattr(self.path, "ranged_constraints", []) or []
-                        matching_constraints = [
-                            rc for rc in ranged_constraints if getattr(rc, "key", None) == key
-                        ]
-
-                        if instance_idx < len(matching_constraints):
-                            rc_live = matching_constraints[instance_idx]
-                        else:
-                            rc_live = rc_obj
-
-                        # Use the actual constraint ordinals for preview
-                        start_ord = max(
-                            1, min(int(getattr(rc_live, "start_ordinal", 1)), int(total))
-                        )
-                        end_ord = max(
-                            1, min(int(getattr(rc_live, "end_ordinal", total)), int(total))
-                        )
-
-                        self._active_preview_key = key
-                        self.constraintRangePreviewRequested.emit(key, start_ord, end_ord)
-                    except Exception:
-                        pass
-
-                filt = SpinboxPreviewFilter(_emit_preview_from_spin)
-                spinbox.installEventFilter(filt)
-                try:
-                    editor = spinbox.findChild(QWidget)
-                    if editor is not None:
-                        editor.installEventFilter(filt)
-                except Exception:
-                    pass
-                if not hasattr(self, "_spinbox_preview_filters"):
-                    self._spinbox_preview_filters = {}
-                try:
-                    self._spinbox_preview_filters.setdefault(key, []).append(filt)
-                except Exception:
-                    pass
-            except Exception:
-                pass
+        vbox.addWidget(controls_row)
 
         try:
             field_container.updateGeometry()
         except Exception:
-            pass
+            pass  # widget may be destroyed
 
-        # Make label clickable to show preview of first instance
+        # Make label clickable to show preview of first segment
         label_widget.setStyleSheet(
             label_widget.styleSheet() + " QLabel:hover { text-decoration: underline; }"
         )
@@ -1131,13 +622,11 @@ class ConstraintManager(QObject):
                 return False
 
         def _show_first_preview():
-            if sliders:
-                l, h = sliders[0].values()
-                # Map slider handles to model ordinals
-                start1 = max(1, min(int(l), int(total)))
-                end1 = max(1, min(int(h - 1), int(total)))
+            rc_list = self._segment_rc_lists.get(key, [])
+            if rc_list:
+                rc = rc_list[0]
                 self._active_preview_key = key
-                self.constraintRangePreviewRequested.emit(key, start1, end1)
+                self.constraintRangePreviewRequested.emit(key, rc.start_ordinal, rc.end_ordinal)
 
         label_filter = LabelClickFilter(_show_first_preview)
         label_widget.installEventFilter(label_filter)
@@ -1145,151 +634,292 @@ class ConstraintManager(QObject):
             self._label_filters = {}
         self._label_filters[key] = label_filter
 
-        # Store references
-        self._range_sliders[key] = sliders
-        self._range_spinboxes[key] = spins
-        self._range_slider_rows[key] = field_container
+        # Auto-select first segment
+        if ranged_list:
+            bar.set_selected_index(0)
+            self._on_segment_selected(key, 0)
 
-        return sliders[0] if sliders else None
+        return bar
+
+    # ------------------------------------------------------------------
+    # Segment bar signal handlers
+    # ------------------------------------------------------------------
+
+    def _on_segment_selected(self, key: str, segment_index: int):
+        """Handle segment selection in the bar."""
+        self._selected_segment_indices[key] = segment_index
+        if key in self._segment_rc_lists and 0 <= segment_index < len(self._segment_rc_lists[key]):
+            rc = self._segment_rc_lists[key][segment_index]
+            # Update spinbox value (without triggering signals)
+            spinbox = self._segment_spinboxes.get(key)
+            if spinbox:
+                spinbox.blockSignals(True)
+                spinbox.setValue(rc.value)
+                spinbox.blockSignals(False)
+                spinbox.setEnabled(True)
+            # Emit preview for canvas overlay
+            try:
+                self._active_preview_key = key
+                self.constraintRangePreviewRequested.emit(key, rc.start_ordinal, rc.end_ordinal)
+            except Exception:
+                traceback.print_exc()
+
+    def _on_segment_boundary_dragged(self, key: str, seg_idx: int, new_start: int, new_end: int):
+        """Handle live boundary drag."""
+        if not self._boundary_drag_started:
+            self._boundary_drag_started = True
+            try:
+                self.aboutToChange.emit("Edit constraint range")
+            except Exception:
+                traceback.print_exc()
+
+        rc_list = self._segment_rc_lists.get(key, [])
+        if 0 <= seg_idx < len(rc_list):
+            rc = rc_list[seg_idx]
+            rc.start_ordinal = new_start
+            rc.end_ordinal = new_end
+            try:
+                self.constraintRangePreviewRequested.emit(key, new_start, new_end)
+            except Exception:
+                traceback.print_exc()
+
+    def _on_segment_boundary_drag_finished(self, key: str):
+        """Commit boundary drag."""
+        self._boundary_drag_started = False
+        try:
+            self.userActionOccurred.emit("Edit constraint range")
+            self.constraintRangeChanged.emit(key, 0, 0)  # trigger sim rebuild
+        except Exception:
+            traceback.print_exc()
+
+    def _on_gap_double_clicked(self, key: str, gap_start: int, gap_end: int):
+        """Create new constraint in gap."""
+        try:
+            self.aboutToChange.emit("Add constraint range")
+        except Exception:
+            traceback.print_exc()
+
+        # Get default value from SPINNER_METADATA
+        meta = SPINNER_METADATA.get(key, {})
+        default_val = meta.get("default", meta.get("minimum", 0.0))
+        # Use range minimum as fallback
+        range_values = meta.get("range")
+        if default_val == 0.0 and isinstance(range_values, tuple) and len(range_values) == 2:
+            default_val = float(range_values[0])
+
+        rc = RangedConstraint(key=key, value=default_val, start_ordinal=gap_start, end_ordinal=gap_end)
+        if self.path.ranged_constraints is None:
+            self.path.ranged_constraints = []
+        self.path.ranged_constraints.append(rc)
+
+        self._rebuild_segment_bar_for_key(key)
+
+        try:
+            self.userActionOccurred.emit("Add constraint range")
+        except Exception:
+            traceback.print_exc()
+
+    def _on_segment_delete_requested(self, key: str, seg_idx: int):
+        """Delete a constraint segment."""
+        rc_list = self._segment_rc_lists.get(key, [])
+        if 0 <= seg_idx < len(rc_list):
+            rc = rc_list[seg_idx]
+            try:
+                self.aboutToChange.emit("Delete constraint range")
+            except Exception:
+                traceback.print_exc()
+
+            if rc in self.path.ranged_constraints:
+                self.path.ranged_constraints.remove(rc)
+
+            # Check if any instances remain
+            remaining = [r for r in self.path.ranged_constraints if r.key == key]
+            if not remaining:
+                self._remove_container_for_key(key)
+                self.constraintRemoved.emit(key)
+            else:
+                self._rebuild_segment_bar_for_key(key)
+
+            try:
+                self.userActionOccurred.emit("Delete constraint range")
+            except Exception:
+                traceback.print_exc()
+
+    def _on_segment_split_requested(self, key: str, seg_idx: int):
+        """Split a segment at its midpoint."""
+        rc_list = self._segment_rc_lists.get(key, [])
+        if 0 <= seg_idx < len(rc_list):
+            rc = rc_list[seg_idx]
+            if rc.end_ordinal - rc.start_ordinal < 1:
+                return  # can't split single-element segment
+
+            try:
+                self.aboutToChange.emit("Split constraint range")
+            except Exception:
+                traceback.print_exc()
+
+            mid = (rc.start_ordinal + rc.end_ordinal) // 2
+            new_rc = RangedConstraint(key=key, value=rc.value, start_ordinal=mid + 1, end_ordinal=rc.end_ordinal)
+            rc.end_ordinal = mid
+
+            # Insert new rc after the current one
+            idx_in_path = self.path.ranged_constraints.index(rc)
+            self.path.ranged_constraints.insert(idx_in_path + 1, new_rc)
+
+            self._rebuild_segment_bar_for_key(key)
+
+            try:
+                self.userActionOccurred.emit("Split constraint range")
+            except Exception:
+                traceback.print_exc()
+
+    def _on_segment_spinbox_changed(self, key: str, value: float):
+        """Handle spinbox value change for the selected segment."""
+        idx = self._selected_segment_indices.get(key, -1)
+        rc_list = self._segment_rc_lists.get(key, [])
+        if 0 <= idx < len(rc_list):
+            rc_list[idx].value = value
+            self._rebuild_segment_bar_for_key(key)
+            self.constraintValueChanged.emit(key, value)
+
+    # ------------------------------------------------------------------
+    # Segment bar rebuild helper
+    # ------------------------------------------------------------------
+
+    def _rebuild_segment_bar_for_key(self, key: str):
+        """Refresh the segment bar for a key from current model state."""
+        bar = self._segment_bars.get(key)
+        if bar is None:
+            return
+
+        ranged_list = [rc for rc in (self.path.ranged_constraints or []) if rc.key == key]
+        ranged_list.sort(key=lambda rc: rc.start_ordinal)
+        self._segment_rc_lists[key] = ranged_list
+
+        color = SEGMENT_COLORS.get(key, QColor("#666666"))
+        segments = [SegmentData(rc.start_ordinal, rc.end_ordinal, rc.value, color) for rc in ranged_list]
+        bar.set_segments(segments)
+
+        # Update domain size in case it changed
+        domain, count = self.get_domain_info_for_key(key)
+        bar.set_domain_size(max(1, count))
+
+        # Re-select if possible
+        prev_idx = self._selected_segment_indices.get(key, 0)
+        if ranged_list:
+            new_idx = min(prev_idx, len(ranged_list) - 1)
+            bar.set_selected_index(new_idx)
+            self._on_segment_selected(key, new_idx)
+        else:
+            bar.set_selected_index(-1)
+
+    # ------------------------------------------------------------------
+    # Ranged constraint value update (internal)
+    # ------------------------------------------------------------------
 
     def _update_single_ranged_constraint_value(self, key: str, rc_obj, value: float):
         """Update the value for one ranged constraint instance (internal)."""
         try:
             rc_obj.value = float(value)
-        except Exception:
-            try:
-                rc_obj.value = value
-            except Exception:
-                pass
+        except (TypeError, ValueError):
+            rc_obj.value = value
         # Emit generic value changed signal
         self.constraintValueChanged.emit(key, float(value))
 
-    def clear_range_sliders(self):
-        """Clear all range sliders."""
-        try:
-            # Remove only the slider widgets; keep the constraint rows intact
-            for key, slider_list in list(self._range_sliders.items()):
-                for slider in slider_list:
-                    try:
-                        parent = slider.parentWidget()
-                        if parent is not None and parent.layout() is not None:
-                            try:
-                                parent.layout().removeWidget(slider)
-                            except Exception:
-                                pass
-                        slider.deleteLater()
-                    except Exception:
-                        pass
-            self._range_slider_rows.clear()
-            self._range_sliders.clear()
-            self._range_spinboxes.clear()
-            self._slider_prev_values.clear()
-            # Also hide any encompassing containers so background widgets don't persist
-            for _key, container in list(self._constraint_field_containers.items()):
-                try:
-                    if container is not None:
-                        container.setVisible(False)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+    # ------------------------------------------------------------------
+    # Segment bar lifecycle
+    # ------------------------------------------------------------------
+
+    def clear_segment_bars(self):
+        """Remove all segment bars and their state."""
+        for key, bar in self._segment_bars.items():
+            try:
+                bar.deleteLater()
+            except Exception:
+                pass  # widget may be destroyed
+        self._segment_bars.clear()
+        self._segment_spinboxes.clear()
+        self._segment_rc_lists.clear()
+        self._selected_segment_indices.clear()
+        # Also hide any encompassing containers so background widgets don't persist
+        for _key, container in list(self._constraint_field_containers.items()):
+            try:
+                if container is not None:
+                    container.setVisible(False)
+            except Exception:
+                pass  # widget may be destroyed
 
     def set_active_preview_key(self, key: str):
         """Set the active constraint preview key and emit preview signal."""
-        try:
-            if key in self._range_sliders and self._range_sliders[key]:
-                s = self._range_sliders[key][0]
-                l, h = s.values()
-                # Map slider handles (1..total+1) -> model ordinals (1..total)
-                _domain, count = self.get_domain_info_for_key(key)
-                total = int(count) if int(count) > 0 else 1
-                start1 = max(1, min(int(l), total))
-                end1 = max(1, min(int(h - 1), total))
-                self._active_preview_key = key
-                self.constraintRangePreviewRequested.emit(key, int(start1), int(end1))
-        except Exception:
-            pass
+        rc_list = self._segment_rc_lists.get(key, [])
+        idx = self._selected_segment_indices.get(key, 0)
+        if rc_list:
+            if idx < 0 or idx >= len(rc_list):
+                idx = 0
+            rc = rc_list[idx]
+            self._active_preview_key = key
+            self.constraintRangePreviewRequested.emit(key, rc.start_ordinal, rc.end_ordinal)
 
     def refresh_active_preview(self):
         """Refresh the preview for the currently active constraint key."""
-        try:
-            if (
-                self._active_preview_key is not None
-                and self._active_preview_key in self._range_sliders
-                and self._range_sliders[self._active_preview_key]
-            ):
-                s = self._range_sliders[self._active_preview_key][0]
-                l, h = s.values()
-                # Map slider handles to model ordinals
-                _domain, count = self.get_domain_info_for_key(self._active_preview_key)
-                total = int(count) if int(count) > 0 else 1
-                start1 = max(1, min(int(l), total))
-                end1 = max(1, min(int(h - 1), total))
+        if self._active_preview_key is not None:
+            rc_list = self._segment_rc_lists.get(self._active_preview_key, [])
+            idx = self._selected_segment_indices.get(self._active_preview_key, 0)
+            if rc_list:
+                if idx < 0 or idx >= len(rc_list):
+                    idx = 0
+                rc = rc_list[idx]
                 self.constraintRangePreviewRequested.emit(
-                    self._active_preview_key, int(start1), int(end1)
+                    self._active_preview_key, rc.start_ordinal, rc.end_ordinal
                 )
-        except Exception:
-            pass
 
     def clear_active_preview(self):
         """Clear the active preview."""
-        try:
-            self._active_preview_key = None
-            self.constraintRangePreviewCleared.emit()
-        except Exception:
-            pass
+        self._active_preview_key = None
+        self.constraintRangePreviewCleared.emit()
 
     def is_widget_range_related(self, widget: QWidget) -> bool:
-        """Return True if the clicked widget is inside a constraint label/spinner/slider area."""
-        try:
-            if widget is None:
-                return False
-
-            # Check sliders
-            for _key, slider_list in self._range_sliders.items():
-                for slider in slider_list:
-                    try:
-                        if slider is widget:
-                            return True
-                        if hasattr(slider, "isAncestorOf") and slider.isAncestorOf(widget):
-                            return True
-                    except Exception:
-                        pass
-
-            # Check slider containers
-            for _key, row in self._range_slider_rows.items():
-                if row is None:
-                    continue
-                try:
-                    if row is widget:
-                        return True
-                    if hasattr(row, "isAncestorOf") and row.isAncestorOf(widget):
-                        return True
-                except Exception:
-                    pass
-
-            # Check spinboxes and their child widgets
-            try:
-                for _key, spin_list in self._range_spinboxes.items():
-                    for spin in spin_list or []:
-                        try:
-                            if spin is widget:
-                                return True
-                            if hasattr(spin, "isAncestorOf") and spin.isAncestorOf(widget):
-                                return True
-                        except Exception:
-                            continue
-            except Exception:
-                pass
-
-        except Exception:
+        """Return True if the clicked widget is inside a constraint segment bar/spinner area."""
+        if widget is None:
             return False
+
+        # Check segment bars
+        for _key, bar in self._segment_bars.items():
+            try:
+                if bar is widget:
+                    return True
+                if hasattr(bar, "isAncestorOf") and bar.isAncestorOf(widget):
+                    return True
+            except Exception:
+                pass  # widget may be destroyed
+
+        # Check field containers
+        for _key, container in self._constraint_field_containers.items():
+            if container is None:
+                continue
+            try:
+                if container is widget:
+                    return True
+                if hasattr(container, "isAncestorOf") and container.isAncestorOf(widget):
+                    return True
+            except Exception:
+                pass  # widget may be destroyed
+
+        # Check spinboxes and their child widgets
+        for _key, spin in self._segment_spinboxes.items():
+            try:
+                if spin is widget:
+                    return True
+                if hasattr(spin, "isAncestorOf") and spin.isAncestorOf(widget):
+                    return True
+            except Exception:
+                continue  # widget may be destroyed
 
         return False
 
     def can_add_more_instances(self, key: str) -> bool:
         """Return True if another ranged instance can be added for this key (i.e., below max).
-        Max equals the number of unit segments (total) = number of slider notches - 1.
+        Max equals the number of domain elements (total).
         """
         if self.path is None:
             return False
@@ -1325,32 +955,6 @@ class ConstraintManager(QObject):
             return largest_len >= 2
         except Exception:
             return False
-
-    # ---- Overlap enforcement helpers ----
-    def _would_overlap_for_key(
-        self, key: str, active_slider: RangeSlider, new_low: int, new_high: int
-    ) -> bool:
-        """Return True if setting active_slider to [new_low, new_high) would overlap any
-        other slider of the same key. Touching at boundaries is allowed.
-        """
-        try:
-            if self._enforcing_slider_constraints:
-                return False
-            self._enforcing_slider_constraints = True
-            sliders = self._range_sliders.get(key, []) or []
-            for s in sliders:
-                if s is active_slider:
-                    continue
-                try:
-                    b_low, b_high = s.values()
-                except Exception:
-                    continue
-                # Overlap check on half-open intervals [low, high)
-                if int(new_low) < int(b_high) and int(b_low) < int(new_high):
-                    return True
-            return False
-        finally:
-            self._enforcing_slider_constraints = False
 
     def get_constraint_value(self, key: str) -> Optional[float]:
         """Get the current value of a constraint."""
