@@ -834,7 +834,7 @@ class Sidebar(QWidget):
             return
 
         # Clear constraint range sliders
-        self.constraint_manager.clear_range_sliders()
+        self.constraint_manager.clear_segment_bars()
 
         # Get optional properties from property editor
         optional_display_items = self.property_editor.expose_element_properties(element)
@@ -901,7 +901,7 @@ class Sidebar(QWidget):
                         "max_velocity_deg_per_sec",
                         "max_acceleration_deg_per_sec2",
                     ):
-                        self.constraint_manager.create_range_slider_for_key(
+                        self.constraint_manager.create_segment_bar_for_key(
                             key, control, spin_row, label, self.constraints_layout
                         )
 
