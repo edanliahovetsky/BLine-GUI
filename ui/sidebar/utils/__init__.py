@@ -1,6 +1,9 @@
 from .constants import (
     ElementType,
+    ELEMENT_TYPE_LABELS,
+    ELEMENT_LABEL_TO_TYPE,
     SPINNER_METADATA,
+    SPINNER_UNITS,
     DEGREES_TO_RADIANS_ATTR_MAP,
     PATH_CONSTRAINT_KEYS,
     NON_RANGED_CONSTRAINT_KEYS,
@@ -16,7 +19,10 @@ from .element_helpers import (
 
 __all__ = [
     "ElementType",
+    "ELEMENT_TYPE_LABELS",
+    "ELEMENT_LABEL_TO_TYPE",
     "SPINNER_METADATA",
+    "SPINNER_UNITS",
     "DEGREES_TO_RADIANS_ATTR_MAP",
     "PATH_CONSTRAINT_KEYS",
     "NON_RANGED_CONSTRAINT_KEYS",

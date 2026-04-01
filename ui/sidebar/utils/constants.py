@@ -13,6 +13,18 @@ class ElementType(Enum):
     EVENT_TRIGGER = "event_trigger"
 
 
+# Human-readable labels for element types
+ELEMENT_TYPE_LABELS = {
+    ElementType.TRANSLATION: "Translation",
+    ElementType.ROTATION: "Rotation",
+    ElementType.WAYPOINT: "Waypoint",
+    ElementType.EVENT_TRIGGER: "Event Trigger",
+}
+
+# Reverse mapping: friendly label -> ElementType
+ELEMENT_LABEL_TO_TYPE = {v: k for k, v in ELEMENT_TYPE_LABELS.items()}
+
+
 # Spinner metadata configuration
 SPINNER_METADATA = {
     # Put rotation first so it appears at the top of Core
@@ -138,3 +150,27 @@ NON_RANGED_CONSTRAINT_KEYS = [
     "end_translation_tolerance_meters",
     "end_rotation_tolerance_deg",
 ]
+
+
+def _extract_unit(label: str) -> str:
+    """Extract the unit suffix from a label like 'X (m)' -> ' m'.
+
+    Returns empty string for non-unit parenthetical info (e.g. '(0-1)').
+    """
+    import re
+    m = re.search(r'\(([^)]+)\)\s*$', label.replace("<br/>", " "))
+    if m:
+        unit = m.group(1)
+        # Skip range indicators like "0-1" — those aren't units
+        if re.fullmatch(r'[\d.\-–]+', unit):
+            return ""
+        return " " + unit
+    return ""
+
+
+# Pre-computed mapping of spinner key -> unit suffix string (e.g. " m", " deg")
+SPINNER_UNITS = {
+    key: _extract_unit(data.get("label", ""))
+    for key, data in SPINNER_METADATA.items()
+    if data.get("type", "spinner") == "spinner"
+}

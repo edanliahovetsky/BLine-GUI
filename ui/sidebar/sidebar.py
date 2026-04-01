@@ -1,6 +1,7 @@
 # mypy: ignore-errors
 """Main sidebar widget for path element management."""
 
+import math
 from typing import Optional
 from PySide6.QtWidgets import (
     QWidget,
@@ -24,7 +25,7 @@ from models.path_model import Path, TranslationTarget, RotationTarget, Waypoint,
 
 from .widgets import CustomList, PersistentCustomList, PopupCombobox, PersistentScrollArea
 from .components import ElementManager, ConstraintManager, PropertyEditor
-from .utils import ElementType, SPINNER_METADATA, PATH_CONSTRAINT_KEYS, NON_RANGED_CONSTRAINT_KEYS
+from .utils import ElementType, ELEMENT_TYPE_LABELS, ELEMENT_LABEL_TO_TYPE, SPINNER_METADATA, PATH_CONSTRAINT_KEYS, NON_RANGED_CONSTRAINT_KEYS
 
 
 class Sidebar(QWidget):
@@ -100,10 +101,11 @@ class Sidebar(QWidget):
 
         # Elements list
         self.points_list = PersistentCustomList()
-        # Set size policy to prevent unwanted expansion
-        self.points_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        # Set a reasonable fixed height to prevent it from expanding/contracting
-        self.points_list.setFixedHeight(200)
+        # Set size policy to allow adaptive height
+        self.points_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        # Let the list adapt to content while keeping reasonable bounds
+        self.points_list.setMinimumHeight(80)
+        self.points_list.setMaximumHeight(300)
         # Enable scrolling for long lists
         self.points_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         main_layout.addWidget(self.points_list)
@@ -251,7 +253,7 @@ class Sidebar(QWidget):
         self.optional_box_layout.setContentsMargins(0, 0, 0, 0)
 
         self.type_combo = QComboBox()
-        self.type_combo.addItems([e.value for e in ElementType])
+        self.type_combo.addItems([ELEMENT_TYPE_LABELS[e] for e in ElementType])
         self.type_combo.currentTextChanged.connect(self.on_type_change)
         self.type_label = QLabel("Type:")
 
@@ -657,16 +659,19 @@ class Sidebar(QWidget):
 
             if self.path:
                 for i, p in enumerate(self.path.path_elements):
+                    # Build a descriptive label with 1-based index and coordinates
+                    idx_prefix = f"{i + 1}."
                     if isinstance(p, TranslationTarget):
-                        name = ElementType.TRANSLATION.value
+                        name = f"{idx_prefix} Translation ({p.x_meters:.1f}, {p.y_meters:.1f})"
                     elif isinstance(p, RotationTarget):
-                        name = ElementType.ROTATION.value
+                        deg = math.degrees(p.rotation_radians) if p.rotation_radians is not None else 0.0
+                        name = f"{idx_prefix} Rotation ({deg:.1f}\u00b0)"
                     elif isinstance(p, EventTrigger):
-                        name = ElementType.EVENT_TRIGGER.value
+                        name = f"{idx_prefix} Event Trigger"
                     elif isinstance(p, Waypoint):
-                        name = ElementType.WAYPOINT.value
+                        name = f"{idx_prefix} Waypoint ({p.translation_target.x_meters:.1f}, {p.translation_target.y_meters:.1f})"
                     else:
-                        name = "Unknown"
+                        name = f"{idx_prefix} Unknown"
 
                     # Use an empty QListWidgetItem and render all visuals via a row widget
                     item = QListWidgetItem("")
@@ -685,8 +690,8 @@ class Sidebar(QWidget):
                     remove_btn = QPushButton()
                     remove_btn.setIcon(QIcon(":/assets/remove_icon.png"))
                     remove_btn.setToolTip("Remove element")
-                    remove_btn.setFixedSize(18, 18)
-                    remove_btn.setIconSize(QSize(14, 14))
+                    remove_btn.setFixedSize(24, 24)
+                    remove_btn.setIconSize(QSize(16, 16))
                     remove_btn.setStyleSheet(
                         "QPushButton { border: none; } QPushButton:hover { background: #555; border-radius: 3px; }"
                     )
@@ -923,14 +928,14 @@ class Sidebar(QWidget):
         if self.path is None:
             return
         is_end = idx == 0 or idx == len(self.path.path_elements) - 1
-        allowed = [e.value for e in ElementType]
+        allowed = [ELEMENT_TYPE_LABELS[e] for e in ElementType]
         if is_end and current_type not in (ElementType.ROTATION, ElementType.EVENT_TRIGGER):
-            allowed = [ElementType.TRANSLATION.value, ElementType.WAYPOINT.value]
+            allowed = [ELEMENT_TYPE_LABELS[ElementType.TRANSLATION], ELEMENT_TYPE_LABELS[ElementType.WAYPOINT]]
         try:
             self.type_combo.blockSignals(True)
             self.type_combo.clear()
             self.type_combo.addItems(allowed)
-            self.type_combo.setCurrentText(current_type.value)
+            self.type_combo.setCurrentText(ELEMENT_TYPE_LABELS[current_type])
         finally:
             self.type_combo.blockSignals(False)
 
@@ -943,10 +948,10 @@ class Sidebar(QWidget):
         non_rot = sum(
             1 for e in self.path.path_elements if not isinstance(e, (RotationTarget, EventTrigger))
         )
-        items = [ElementType.TRANSLATION.value, ElementType.WAYPOINT.value]
+        items = [ELEMENT_TYPE_LABELS[ElementType.TRANSLATION], ELEMENT_TYPE_LABELS[ElementType.WAYPOINT]]
         if non_rot >= 2:
-            items.append(ElementType.ROTATION.value)
-            items.append(ElementType.EVENT_TRIGGER.value)
+            items.append(ELEMENT_TYPE_LABELS[ElementType.ROTATION])
+            items.append(ELEMENT_TYPE_LABELS[ElementType.EVENT_TRIGGER])
         self.add_element_pop.add_items(items)
 
     def _insert_position_from_selection(self) -> int:
@@ -962,7 +967,7 @@ class Sidebar(QWidget):
         if self.path is None:
             return
 
-        new_type = ElementType(type_text)
+        new_type = ELEMENT_LABEL_TO_TYPE.get(type_text) or ElementType(type_text)
         insert_pos = self._insert_position_from_selection()
         current_idx = self.get_selected_index()
 
@@ -1029,7 +1034,7 @@ class Sidebar(QWidget):
         if idx is None or self.path is None:
             return
 
-        new_type = ElementType(value)
+        new_type = ELEMENT_LABEL_TO_TYPE.get(value) or ElementType(value)
 
         # Announce about-to-change
         try:
