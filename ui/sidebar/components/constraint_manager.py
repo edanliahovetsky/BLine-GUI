@@ -358,20 +358,25 @@ class ConstraintManager(QObject):
         if self.path is None:
             return "translation", 0
 
+        from models.path_model import (
+            EventTrigger,
+            RotationTarget,
+            TranslationTarget,
+            Waypoint,
+        )
+
         if key in ("max_velocity_meters_per_sec", "max_acceleration_meters_per_sec2"):
-            # Domain: anchors
             count = sum(
                 1
                 for e in self.path.path_elements
-                if hasattr(e, "x_meters") or hasattr(e, "translation_target")
+                if isinstance(e, (TranslationTarget, Waypoint))
             )
             return "translation", int(count)
         else:
-            # Domain: rotation events
             count = sum(
                 1
                 for e in self.path.path_elements
-                if hasattr(e, "rotation_radians") or hasattr(e, "rotation_target")
+                if isinstance(e, (Waypoint, RotationTarget, EventTrigger))
             )
             return "rotation", int(count)
 
@@ -531,6 +536,12 @@ class ConstraintManager(QObject):
         bar.segmentBoundaryDragged.connect(
             lambda seg_idx, ns, ne, k=key: self._on_segment_boundary_dragged(k, seg_idx, ns, ne)
         )
+        bar.segmentMoved.connect(
+            lambda seg_idx, ns, ne, k=key: self._on_segment_boundary_dragged(k, seg_idx, ns, ne)
+        )
+        bar.adjacentBoundaryDragged.connect(
+            lambda ai, a_s, a_e, bi, b_s, b_e, k=key: self._on_adjacent_boundary_dragged(k, ai, a_s, a_e, bi, b_s, b_e)
+        )
         bar.segmentBoundaryDragFinished.connect(lambda k=key: self._on_segment_boundary_drag_finished(k))
         bar.gapDoubleClicked.connect(lambda gs, ge, k=key: self._on_gap_double_clicked(k, gs, ge))
         bar.deleteRequested.connect(lambda seg_idx, k=key: self._on_segment_delete_requested(k, seg_idx))
@@ -602,6 +613,17 @@ class ConstraintManager(QObject):
         ))
         controls_layout.addWidget(split_btn)
 
+        # Pop-out button
+        popout_btn = QPushButton("\u2197")  # ↗ arrow
+        popout_btn.setFixedSize(24, 24)
+        popout_btn.setToolTip("Open in pop-out window")
+        popout_btn.setStyleSheet(
+            "QPushButton { border: 1px solid #555; border-radius: 3px; font-size: 14px; color: #ccc; }"
+            " QPushButton:hover { background: #555; }"
+        )
+        popout_btn.clicked.connect(lambda checked=False: self.open_popout())
+        controls_layout.addWidget(popout_btn)
+
         vbox.addWidget(controls_row)
 
         try:
@@ -640,10 +662,12 @@ class ConstraintManager(QObject):
             self._label_filters = {}
         self._label_filters[key] = label_filter
 
-        # Auto-select first segment
+        # Auto-select first segment (no preview — bar creation is programmatic)
         if ranged_list:
+            bar.blockSignals(True)
             bar.set_selected_index(0)
-            self._on_segment_selected(key, 0)
+            bar.blockSignals(False)
+            self._on_segment_selected(key, 0, emit_preview=False)
 
         return bar
 
@@ -651,7 +675,7 @@ class ConstraintManager(QObject):
     # Segment bar signal handlers
     # ------------------------------------------------------------------
 
-    def _on_segment_selected(self, key: str, segment_index: int):
+    def _on_segment_selected(self, key: str, segment_index: int, emit_preview: bool = True):
         """Handle segment selection in the bar."""
         self._selected_segment_indices[key] = segment_index
         if key in self._segment_rc_lists and 0 <= segment_index < len(self._segment_rc_lists[key]):
@@ -663,15 +687,24 @@ class ConstraintManager(QObject):
                 spinbox.setValue(rc.value)
                 spinbox.blockSignals(False)
                 spinbox.setEnabled(True)
-            # Emit preview for canvas overlay
-            try:
-                self._active_preview_key = key
-                self.constraintRangePreviewRequested.emit(key, rc.start_ordinal, rc.end_ordinal)
-            except Exception:
-                traceback.print_exc()
+            # Emit preview for canvas overlay — only on explicit user clicks, not programmatic rebuilds
+            if emit_preview:
+                try:
+                    self._active_preview_key = key
+                    self.constraintRangePreviewRequested.emit(key, rc.start_ordinal, rc.end_ordinal)
+                except Exception:
+                    traceback.print_exc()
+        else:
+            # No segment selected — disable and zero out spinbox
+            spinbox = self._segment_spinboxes.get(key)
+            if spinbox:
+                spinbox.blockSignals(True)
+                spinbox.setValue(0)
+                spinbox.blockSignals(False)
+                spinbox.setEnabled(False)
 
     def _on_segment_boundary_dragged(self, key: str, seg_idx: int, new_start: int, new_end: int):
-        """Handle live boundary drag."""
+        """Handle live boundary or segment drag."""
         if not self._boundary_drag_started:
             self._boundary_drag_started = True
             try:
@@ -689,6 +722,23 @@ class ConstraintManager(QObject):
             except Exception:
                 traceback.print_exc()
 
+    def _on_adjacent_boundary_dragged(self, key: str, a_idx: int, a_start: int, a_end: int, b_idx: int, b_start: int, b_end: int):
+        """Handle dragging a shared boundary between two adjacent segments."""
+        if not self._boundary_drag_started:
+            self._boundary_drag_started = True
+            try:
+                self.aboutToChange.emit("Edit constraint range")
+            except Exception:
+                traceback.print_exc()
+
+        rc_list = self._segment_rc_lists.get(key, [])
+        if 0 <= a_idx < len(rc_list):
+            rc_list[a_idx].start_ordinal = a_start
+            rc_list[a_idx].end_ordinal = a_end
+        if 0 <= b_idx < len(rc_list):
+            rc_list[b_idx].start_ordinal = b_start
+            rc_list[b_idx].end_ordinal = b_end
+
     def _on_segment_boundary_drag_finished(self, key: str):
         """Commit boundary drag."""
         self._boundary_drag_started = False
@@ -697,6 +747,7 @@ class ConstraintManager(QObject):
             self.constraintRangeChanged.emit(key, 0, 0)  # trigger sim rebuild
         except Exception:
             traceback.print_exc()
+        self._sync_popout()
 
     def _on_gap_double_clicked(self, key: str, gap_start: int, gap_end: int):
         """Create new constraint in gap."""
@@ -719,6 +770,7 @@ class ConstraintManager(QObject):
         self.path.ranged_constraints.append(rc)
 
         self._rebuild_segment_bar_for_key(key)
+        self._sync_popout()
 
         try:
             self.userActionOccurred.emit("Add constraint range")
@@ -735,8 +787,8 @@ class ConstraintManager(QObject):
             except Exception:
                 traceback.print_exc()
 
-            if rc in self.path.ranged_constraints:
-                self.path.ranged_constraints.remove(rc)
+            # Remove by identity, not equality
+            self.path.ranged_constraints = [r for r in self.path.ranged_constraints if r is not rc]
 
             # Check if any instances remain
             remaining = [r for r in self.path.ranged_constraints if r.key == key]
@@ -745,6 +797,7 @@ class ConstraintManager(QObject):
                 self.constraintRemoved.emit(key)
             else:
                 self._rebuild_segment_bar_for_key(key)
+            self._sync_popout()
 
             try:
                 self.userActionOccurred.emit("Delete constraint range")
@@ -768,11 +821,19 @@ class ConstraintManager(QObject):
             new_rc = RangedConstraint(key=key, value=rc.value, start_ordinal=mid + 1, end_ordinal=rc.end_ordinal)
             rc.end_ordinal = mid
 
-            # Insert new rc after the current one
-            idx_in_path = self.path.ranged_constraints.index(rc)
-            self.path.ranged_constraints.insert(idx_in_path + 1, new_rc)
+            # Insert new rc after the current one in the path's list
+            idx_in_path = None
+            for i, r in enumerate(self.path.ranged_constraints):
+                if r is rc:
+                    idx_in_path = i
+                    break
+            if idx_in_path is not None:
+                self.path.ranged_constraints.insert(idx_in_path + 1, new_rc)
+            else:
+                self.path.ranged_constraints.append(new_rc)
 
             self._rebuild_segment_bar_for_key(key)
+            self._sync_popout()
 
             try:
                 self.userActionOccurred.emit("Split constraint range")
@@ -810,12 +871,14 @@ class ConstraintManager(QObject):
         domain, count = self.get_domain_info_for_key(key)
         bar.set_domain_size(max(1, count))
 
-        # Re-select if possible
+        # Re-select if possible (no preview emit — rebuilds are programmatic, not user clicks)
         prev_idx = self._selected_segment_indices.get(key, 0)
         if ranged_list:
             new_idx = min(prev_idx, len(ranged_list) - 1)
+            bar.blockSignals(True)
             bar.set_selected_index(new_idx)
-            self._on_segment_selected(key, new_idx)
+            bar.blockSignals(False)
+            self._on_segment_selected(key, new_idx, emit_preview=False)
         else:
             bar.set_selected_index(-1)
 
@@ -865,6 +928,13 @@ class ConstraintManager(QObject):
             return
         from ui.sidebar.dialogs.constraint_popout import ConstraintPopout
 
+        # Rebuild sidebar bars from model to ensure they reflect current state
+        for key in list(self._segment_bars.keys()):
+            try:
+                self._rebuild_segment_bar_for_key(key)
+            except Exception:
+                pass
+
         if self._popout_dialog is not None:
             try:
                 self._popout_dialog.set_path(self.path)
@@ -881,6 +951,14 @@ class ConstraintManager(QObject):
         self._popout_dialog.segmentSelectedInPopout.connect(self._on_popout_segment_selected)
         self._popout_dialog.show()
         self.popoutOpened.emit()
+
+    def _sync_popout(self):
+        """Rebuild the popout dialog to reflect sidebar model changes."""
+        if self._popout_dialog is not None:
+            try:
+                self._popout_dialog.rebuild()
+            except Exception:
+                pass
 
     def _on_popout_closed(self):
         """Handle popout dialog closing."""
@@ -910,6 +988,9 @@ class ConstraintManager(QObject):
         if 0 <= segment_index < len(rc_list):
             rc = rc_list[segment_index]
             self.popoutSegmentSelected.emit(key, rc.start_ordinal, rc.end_ordinal)
+            # Also show the green range overlay on the canvas
+            self._active_preview_key = key
+            self.constraintRangePreviewRequested.emit(key, rc.start_ordinal, rc.end_ordinal)
 
     def handle_canvas_element_clicked(self, global_index: int):
         """Handle a canvas element click while popout is active.

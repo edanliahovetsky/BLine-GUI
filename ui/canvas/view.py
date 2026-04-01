@@ -1756,6 +1756,11 @@ class CanvasView(QGraphicsView):
                     self.selectionCleared.emit()
                 except Exception:
                     pass
+                try:
+                    self.clear_constraint_range_overlay()
+                    self._clear_constraint_highlight()
+                except Exception:
+                    pass
                 self._is_panning = True
                 self._pan_start = event.pos()
                 self.viewport().setCursor(Qt.ClosedHandCursor)
@@ -1843,7 +1848,7 @@ class CanvasView(QGraphicsView):
             anchors = [
                 (i, it)
                 for i, (k, it, _h) in enumerate(self._items)
-                if k in ("rotation", "waypoint")
+                if k in ("rotation", "waypoint", "event_trigger")
             ]
         else:
             anchors = [

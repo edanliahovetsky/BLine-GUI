@@ -37,7 +37,9 @@ class SegmentBar(QWidget):
     """
 
     segmentSelected = Signal(int)
-    segmentBoundaryDragged = Signal(int, int, int)
+    segmentBoundaryDragged = Signal(int, int, int)  # seg_idx, new_start, new_end
+    segmentMoved = Signal(int, int, int)  # seg_idx, new_start, new_end (whole segment drag)
+    adjacentBoundaryDragged = Signal(int, int, int, int, int, int)  # seg_a_idx, a_start, a_end, seg_b_idx, b_start, b_end
     segmentBoundaryDragFinished = Signal()
     gapDoubleClicked = Signal(int, int)
     deleteRequested = Signal(int)
@@ -62,6 +64,9 @@ class SegmentBar(QWidget):
         # Interaction state
         self._dragging_boundary: Optional[Tuple[int, str]] = None  # (segment_index, "start"|"end")
         self._drag_original_ordinal: int = 0
+        self._dragging_segment: int = -1  # segment index being dragged as a whole
+        self._drag_segment_offset: int = 0  # ordinal offset from click to segment start
+        self._drag_segment_width: int = 0  # original segment width in ordinals
         self._hovered_boundary: Optional[Tuple[int, str]] = None
         self._hovered_segment: int = -1
         self._scroll_offset: int = 0
@@ -366,10 +371,20 @@ class SegmentBar(QWidget):
             self.setFocus(Qt.MouseFocusReason)
             return
 
-        # 2. Segment hit?
+        # 2. Segment hit? — select and start potential drag
         seg_idx = self._hit_test_segment(x)
         if seg_idx >= 0:
-            self.set_selected_index(seg_idx)
+            if seg_idx == self._selected_index:
+                # Re-click on already-selected segment: re-emit to refresh preview
+                self.segmentSelected.emit(seg_idx)
+            else:
+                self.set_selected_index(seg_idx)
+            seg = self._segments[seg_idx]
+            self._dragging_segment = seg_idx
+            click_ordinal = self._x_to_ordinal(x)
+            self._drag_segment_offset = click_ordinal - seg.start_ordinal
+            self._drag_segment_width = seg.end_ordinal - seg.start_ordinal
+            self.setCursor(Qt.ClosedHandCursor)
             event.accept()
             self.setFocus(Qt.MouseFocusReason)
             return
@@ -388,44 +403,128 @@ class SegmentBar(QWidget):
             return
         event.accept()
 
+    def _find_adjacent_segment(self, seg_idx: int, side: str) -> int:
+        """Find the index of a segment adjacent to seg on the given side, or -1."""
+        seg = self._segments[seg_idx]
+        for i, other in enumerate(self._segments):
+            if i == seg_idx:
+                continue
+            if side == "start" and other.end_ordinal == seg.start_ordinal - 1:
+                return i
+            if side == "end" and other.start_ordinal == seg.end_ordinal + 1:
+                return i
+        return -1
+
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         x = int(event.position().x() if hasattr(event, "position") else event.x())
         y = int(event.position().y() if hasattr(event, "position") else event.y())
 
+        # --- Boundary drag ---
         if self._dragging_boundary is not None:
             seg_idx, side = self._dragging_boundary
             new_ordinal = self._x_to_ordinal(x)
             seg = self._segments[seg_idx]
 
-            # Clamp to prevent crossing the other edge of this segment
-            if side == "start":
-                new_ordinal = min(new_ordinal, seg.end_ordinal)
-                # Prevent overlapping with previous segment
-                for other in self._segments:
-                    if other is seg:
-                        continue
-                    if other.end_ordinal < seg.end_ordinal and other.end_ordinal >= new_ordinal:
-                        new_ordinal = other.end_ordinal + 1
-                new_ordinal = max(1, new_ordinal)
-                new_start = new_ordinal
-                new_end = seg.end_ordinal
-            else:
-                new_ordinal = max(new_ordinal, seg.start_ordinal)
-                # Prevent overlapping with next segment
-                for other in self._segments:
-                    if other is seg:
-                        continue
-                    if other.start_ordinal > seg.start_ordinal and other.start_ordinal <= new_ordinal:
-                        new_ordinal = other.start_ordinal - 1
-                new_ordinal = min(self._domain_size, new_ordinal)
-                new_start = seg.start_ordinal
-                new_end = new_ordinal
+            # Find adjacent segment on the dragged side
+            adj_idx = self._find_adjacent_segment(seg_idx, side)
 
-            self.segmentBoundaryDragged.emit(seg_idx, new_start, new_end)
+            if side == "start":
+                new_ordinal = min(new_ordinal, seg.end_ordinal)  # can't cross own end
+                new_ordinal = max(1, new_ordinal)
+
+                if adj_idx >= 0:
+                    # Adjacent segment: resize both (shared boundary)
+                    adj = self._segments[adj_idx]
+                    new_ordinal = max(new_ordinal, adj.start_ordinal + 1)  # adj must keep at least 1
+                    adj.end_ordinal = new_ordinal - 1
+                    self.adjacentBoundaryDragged.emit(
+                        adj_idx, adj.start_ordinal, adj.end_ordinal,
+                        seg_idx, new_ordinal, seg.end_ordinal,
+                    )
+                else:
+                    # No adjacent: clamp against other non-adjacent segments
+                    for other in self._segments:
+                        if other is seg:
+                            continue
+                        if other.end_ordinal < seg.end_ordinal and other.end_ordinal >= new_ordinal:
+                            new_ordinal = other.end_ordinal + 1
+                    new_ordinal = max(1, new_ordinal)
+                    self.segmentBoundaryDragged.emit(seg_idx, new_ordinal, seg.end_ordinal)
+
+                seg.start_ordinal = new_ordinal
+
+            else:  # side == "end"
+                new_ordinal = max(new_ordinal, seg.start_ordinal)  # can't cross own start
+                new_ordinal = min(self._domain_size, new_ordinal)
+
+                if adj_idx >= 0:
+                    # Adjacent segment: resize both
+                    adj = self._segments[adj_idx]
+                    new_ordinal = min(new_ordinal, adj.end_ordinal - 1)  # adj must keep at least 1
+                    adj.start_ordinal = new_ordinal + 1
+                    self.adjacentBoundaryDragged.emit(
+                        seg_idx, seg.start_ordinal, new_ordinal,
+                        adj_idx, new_ordinal + 1, adj.end_ordinal,
+                    )
+                else:
+                    # No adjacent: clamp against other segments
+                    for other in self._segments:
+                        if other is seg:
+                            continue
+                        if other.start_ordinal > seg.start_ordinal and other.start_ordinal <= new_ordinal:
+                            new_ordinal = other.start_ordinal - 1
+                    new_ordinal = min(self._domain_size, new_ordinal)
+                    self.segmentBoundaryDragged.emit(seg_idx, seg.start_ordinal, new_ordinal)
+
+                seg.end_ordinal = new_ordinal
+
+            self.update()
             event.accept()
             return
 
-        # Not dragging — hover detection
+        # --- Whole segment drag ---
+        if self._dragging_segment >= 0:
+            seg = self._segments[self._dragging_segment]
+            target_ordinal = self._x_to_ordinal(x)
+            new_start = target_ordinal - self._drag_segment_offset
+            new_end = new_start + self._drag_segment_width
+
+            # Clamp to domain bounds
+            if new_start < 1:
+                new_start = 1
+                new_end = new_start + self._drag_segment_width
+            if new_end > self._domain_size:
+                new_end = self._domain_size
+                new_start = new_end - self._drag_segment_width
+
+            # Clamp against other segments
+            for other in self._segments:
+                if other is seg:
+                    continue
+                # Would overlap other segment — stop at its edge
+                if new_start <= other.end_ordinal and new_end >= other.start_ordinal:
+                    if seg.start_ordinal <= other.start_ordinal:
+                        # Moving right into other
+                        new_end = other.start_ordinal - 1
+                        new_start = new_end - self._drag_segment_width
+                    else:
+                        # Moving left into other
+                        new_start = other.end_ordinal + 1
+                        new_end = new_start + self._drag_segment_width
+
+            new_start = max(1, new_start)
+            new_end = min(self._domain_size, new_end)
+
+            if new_start != seg.start_ordinal or new_end != seg.end_ordinal:
+                seg.start_ordinal = new_start
+                seg.end_ordinal = new_end
+                self.update()
+                self.segmentMoved.emit(self._dragging_segment, new_start, new_end)
+
+            event.accept()
+            return
+
+        # --- Not dragging — hover detection ---
         old_boundary = self._hovered_boundary
         old_segment = self._hovered_segment
 
@@ -439,7 +538,7 @@ class SegmentBar(QWidget):
             seg_idx = self._hit_test_segment(x)
             self._hovered_segment = seg_idx
             if seg_idx >= 0:
-                self.setCursor(Qt.PointingHandCursor)
+                self.setCursor(Qt.OpenHandCursor)
             else:
                 self.unsetCursor()
 
@@ -453,6 +552,11 @@ class SegmentBar(QWidget):
             self._dragging_boundary = None
             self._drag_original_ordinal = 0
             self.segmentBoundaryDragFinished.emit()
+            self.update()
+        if self._dragging_segment >= 0:
+            self._dragging_segment = -1
+            self.unsetCursor()
+            self.segmentBoundaryDragFinished.emit()  # reuse same signal for undo commit
             self.update()
         event.accept()
 

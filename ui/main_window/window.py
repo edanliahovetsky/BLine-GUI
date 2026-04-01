@@ -119,7 +119,13 @@ class MainWindow(WindowEventMixin, QMainWindow):
             lambda index: self.sidebar.select_index(index, propagate_to_canvas=False),
             Qt.QueuedConnection,
         )
+        self.canvas.elementSelected.connect(
+            lambda _: self.sidebar.clear_active_preview(), Qt.QueuedConnection
+        )
         self.canvas.selectionCleared.connect(self.sidebar.clear_selection, Qt.QueuedConnection)
+        self.canvas.selectionCleared.connect(
+            lambda: self.sidebar.clear_active_preview(), Qt.QueuedConnection
+        )
         # Ranged constraints preview from sidebar -> canvas overlay
         try:
             self.sidebar.constraintRangePreviewRequested.connect(

@@ -313,6 +313,14 @@ class ConstraintPopout(QWidget):
         bar.segmentBoundaryDragFinished.connect(
             lambda k=key: self._on_boundary_drag_finished(k)
         )
+        bar.segmentMoved.connect(
+            lambda idx, s, e, k=key: self._on_segment_moved(k, idx, s, e)
+        )
+        bar.adjacentBoundaryDragged.connect(
+            lambda a_idx, a_s, a_e, b_idx, b_s, b_e, k=key: self._on_adjacent_boundary_dragged(
+                k, a_idx, a_s, a_e, b_idx, b_s, b_e
+            )
+        )
         bar.gapDoubleClicked.connect(
             lambda s, e, k=key: self._on_gap_double_clicked(k, s, e)
         )
@@ -342,6 +350,9 @@ class ConstraintPopout(QWidget):
             spinbox.setValue(ranged_list[idx].value)
             spinbox.blockSignals(False)
         else:
+            spinbox.blockSignals(True)
+            spinbox.setValue(0)
+            spinbox.blockSignals(False)
             spinbox.setEnabled(False)
         self.segmentSelectedInPopout.emit(key, idx)
 
@@ -354,12 +365,31 @@ class ConstraintPopout(QWidget):
             rc = ranged_list[idx]
             rc.start_ordinal = start
             rc.end_ordinal = end
-            # Update the bar segment visually during drag
-            bar: SegmentBar = row["bar"]
-            segs = list(bar._segments)
-            if 0 <= idx < len(segs):
-                segs[idx] = SegmentData(start, end, segs[idx].value, segs[idx].color)
-                bar.set_segments(segs)
+
+    def _on_segment_moved(self, key: str, idx: int, start: int, end: int) -> None:
+        row = self._rows.get(key)
+        if row is None:
+            return
+        ranged_list = row["ranged_list"]
+        if 0 <= idx < len(ranged_list):
+            rc = ranged_list[idx]
+            rc.start_ordinal = start
+            rc.end_ordinal = end
+            self.modelChanged.emit()
+
+    def _on_adjacent_boundary_dragged(
+        self, key: str, a_idx: int, a_s: int, a_e: int, b_idx: int, b_s: int, b_e: int
+    ) -> None:
+        row = self._rows.get(key)
+        if row is None:
+            return
+        ranged_list = row["ranged_list"]
+        if 0 <= a_idx < len(ranged_list):
+            ranged_list[a_idx].start_ordinal = a_s
+            ranged_list[a_idx].end_ordinal = a_e
+        if 0 <= b_idx < len(ranged_list):
+            ranged_list[b_idx].start_ordinal = b_s
+            ranged_list[b_idx].end_ordinal = b_e
 
     def _on_boundary_drag_finished(self, key: str) -> None:
         self.modelChanged.emit()
