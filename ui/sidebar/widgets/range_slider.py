@@ -1,7 +1,9 @@
 """Range slider widget for constraint range selection."""
 
+import time
+
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Signal, QRect, QSize
+from PySide6.QtCore import Signal, QRect, QSize, QTimer
 from PySide6.QtGui import QColor, QPen, QFont, QFontMetrics
 from typing import Optional, Tuple
 
@@ -32,6 +34,9 @@ class RangeSlider(QWidget):
         self._hovered_handle: Optional[str] = None
         # Keyboard focus state
         self._focused_handle: str = "low"
+        # Block feedback visual state
+        self._blocked_until: float = 0.0
+        self._block_highlight_until: float = 0.0
         self.setMinimumHeight(38)
 
         try:
@@ -132,6 +137,24 @@ class RangeSlider(QWidget):
                 high = self._max
                 low = max(self._min, high - sep)
         return int(low), int(high)
+
+    def _show_block_feedback(self):
+        """Flash the active handle red to indicate a blocked drag."""
+        self._blocked_until = time.monotonic() + 0.4
+        self.setCursor(Qt.ForbiddenCursor)
+        self.update()
+
+        def _restore():
+            self.unsetCursor()
+            self.update()
+
+        QTimer.singleShot(400, _restore)
+
+    def _show_block_highlight(self):
+        """Highlight this slider's band red to show it's blocking another slider."""
+        self._block_highlight_until = time.monotonic() + 0.4
+        self.update()
+        QTimer.singleShot(400, self.update)
 
     def values(self) -> Tuple[int, int]:
         """Get the current range values."""
@@ -267,6 +290,12 @@ class RangeSlider(QWidget):
         painter.setPen(Qt.NoPen)
         painter.drawRect(QRect(min(x1, x2), cy - track_h // 2, abs(x2 - x1), track_h))
 
+        # Block-highlight overlay on the band (semi-transparent red)
+        if time.monotonic() < self._block_highlight_until:
+            painter.setBrush(QColor(204, 51, 51, 68))
+            painter.setPen(Qt.NoPen)
+            painter.drawRect(QRect(min(x1, x2), cy - track_h // 2, abs(x2 - x1), track_h))
+
         # Band grip lines (3 short horizontal lines at center, only when band >= 3 units)
         if (self._high - self._low) >= 3:
             band_cx = (x1 + x2) // 2
@@ -277,13 +306,19 @@ class RangeSlider(QWidget):
                 gy = cy + i * 2
                 painter.drawLine(band_cx - grip_w, gy, band_cx + grip_w, gy)
 
-        # Handles
+        # Handles with hover/active/blocked state coloring
+        is_blocked = time.monotonic() < self._blocked_until
+
         for handle_name, hx in [("low", x1), ("high", x2)]:
             is_dragged = self._dragging == handle_name
             is_hovered = self._hovered_handle == handle_name and self._dragging is None
             is_focused_kb = self.hasFocus() and self._focused_handle == handle_name and self._dragging is None
 
-            if is_dragged:
+            if is_blocked and is_dragged:
+                fill = QColor("#cc3333")
+                border = QColor("#ff4444")
+                border_w = 2
+            elif is_dragged:
                 fill = QColor("#ffffff")
                 border = QColor("#15c915")
                 border_w = 2
