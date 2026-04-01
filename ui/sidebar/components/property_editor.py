@@ -20,7 +20,7 @@ from PySide6.QtGui import QIcon
 
 from ui.qt_compat import Qt, QSizePolicy
 from models.path_model import TranslationTarget, RotationTarget, Waypoint, EventTrigger
-from ..utils import SPINNER_METADATA, DEGREES_TO_RADIANS_ATTR_MAP, clamp_from_metadata
+from ..utils import SPINNER_METADATA, SPINNER_UNITS, DEGREES_TO_RADIANS_ATTR_MAP, clamp_from_metadata
 from ..widgets import NoWheelDoubleSpinBox
 from ..utils.constants import NON_RANGED_CONSTRAINT_KEYS
 
@@ -82,6 +82,10 @@ class PropertyEditor(QObject):
                 control.setMinimumWidth(96)
                 control.setMaximumWidth(200)
                 control.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                # Add unit suffix (e.g. " m", " deg") from metadata
+                unit_suffix = SPINNER_UNITS.get(name, "")
+                if unit_suffix:
+                    control.setSuffix(unit_suffix)
                 control.valueChanged.connect(lambda v, n=name: self._on_value_changed(n, v))
             # Label
             raw_label = data.get("label", name)
@@ -95,6 +99,8 @@ class PropertyEditor(QObject):
                 pass
             label.setMinimumHeight(24)
             label.setToolTip(label_text)
+            # Add tooltip to the control as well
+            control.setToolTip(f"{label_text} \u2014 use Ctrl+scroll to adjust")
 
             # Row container
             spin_row = QWidget()
@@ -106,8 +112,8 @@ class PropertyEditor(QObject):
 
             # Remove button
             btn = QPushButton()
-            btn.setIconSize(QSize(14, 14))
-            btn.setFixedSize(16, 16)
+            btn.setIconSize(QSize(16, 16))
+            btn.setFixedSize(24, 24)
             btn.setStyleSheet(
                 "QPushButton { border: none; } QPushButton:hover { background: #555; border-radius: 3px; }"
             )
