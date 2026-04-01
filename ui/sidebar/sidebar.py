@@ -20,6 +20,7 @@ from PySide6.QtGui import QIcon
 
 from ui.qt_compat import Qt, QSizePolicy
 from models.path_model import Path, TranslationTarget, RotationTarget, Waypoint, EventTrigger
+from models.ordinal_remap import remap_ranged_constraints
 
 
 from .widgets import CustomList, PersistentCustomList, PopupCombobox, PersistentScrollArea
@@ -972,8 +973,14 @@ class Sidebar(QWidget):
         except Exception:
             pass
 
+        # Snapshot elements before mutation for ordinal remap
+        old_elements = self.path.path_elements[:]
+
         # Add element via manager
         new_index = self.element_manager.add_element(new_type, insert_pos, current_idx)
+
+        # Update ranged constraint ordinals to reflect the new element list
+        remap_ranged_constraints(self.path, old_elements)
 
         # Rebuild UI and select new element
         self.rebuild_points_list()
@@ -1009,8 +1016,14 @@ class Sidebar(QWidget):
         except Exception:
             pass
 
+        # Snapshot elements before mutation for ordinal remap
+        old_elements = self.path.path_elements[:]
+
         # Remove via manager
         self.element_manager.remove_element(idx_to_remove)
+
+        # Update ranged constraint ordinals to reflect the removed element
+        remap_ranged_constraints(self.path, old_elements)
 
         # Rebuild list and update selection
         self.rebuild_points_list()
@@ -1037,8 +1050,14 @@ class Sidebar(QWidget):
         except Exception:
             pass
 
+        # Snapshot elements before mutation for ordinal remap
+        old_elements = self.path.path_elements[:]
+
         # Change type via manager
         if self.element_manager.change_element_type(idx, new_type):
+            # Update ranged constraint ordinals to reflect the type change
+            remap_ranged_constraints(self.path, old_elements)
+
             self.rebuild_points_list()
             self.select_index(idx)
 
@@ -1107,8 +1126,14 @@ class Sidebar(QWidget):
             if isinstance(idx, int):
                 new_order.append(idx)
 
+        # Snapshot elements before mutation for ordinal remap
+        old_elements = self.path.path_elements[:]
+
         # Apply reorder via manager
         self.element_manager.reorder_elements(new_order)
+
+        # Update ranged constraint ordinals to reflect the new order
+        remap_ranged_constraints(self.path, old_elements)
 
         # Rebuild UI
         self.rebuild_points_list()
