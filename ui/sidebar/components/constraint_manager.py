@@ -560,6 +560,14 @@ class ConstraintManager(QObject):
                     # Revert to previous valid values
                     prev_l, prev_h = self._slider_prev_values.get(sld, (int(l), int(h)))
                     sld._setValuesInternal(int(prev_l), int(prev_h))
+                    sld._show_block_feedback()
+                    # Highlight the blocking sibling slider
+                    for other_sld in self._range_sliders.get(key, []):
+                        if other_sld is not sld:
+                            b_low, b_high = other_sld.values()
+                            if int(l) < b_high and b_low < int(h):
+                                other_sld._show_block_highlight()
+                                break
                     return
                 # Slider positions are conceptually 0-based; model ordinals are 1-based
                 # start = left_position (0-based) -> +1 => l
@@ -587,6 +595,14 @@ class ConstraintManager(QObject):
                     # Revert to previous and treat as commit of previous
                     prev_l, prev_h = self._slider_prev_values.get(sld, (int(l), int(h)))
                     sld._setValuesInternal(int(prev_l), int(prev_h))
+                    sld._show_block_feedback()
+                    # Highlight the blocking sibling slider
+                    for other_sld in self._range_sliders.get(key, []):
+                        if other_sld is not sld:
+                            b_low, b_high = other_sld.values()
+                            if int(l) < b_high and b_low < int(h):
+                                other_sld._show_block_highlight()
+                                break
                     l, h = int(prev_l), int(prev_h)
                     blocked = True
                 # Map slider handles (1..total+1) -> model ordinals (1..total)

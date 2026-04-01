@@ -1,7 +1,9 @@
 """Range slider widget for constraint range selection."""
 
+import time
+
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Signal, QRect, QSize
+from PySide6.QtCore import Signal, QRect, QSize, QTimer
 from PySide6.QtGui import QColor, QPen
 from typing import Optional, Tuple
 
@@ -26,6 +28,9 @@ class RangeSlider(QWidget):
         self._press_low: int = self._low
         # Minimum number of notches the handles must be apart. 1 prevents overlap.
         self._min_separation: int = 1
+        # Block feedback visual state
+        self._blocked_until: float = 0.0
+        self._block_highlight_until: float = 0.0
         self.setMinimumHeight(22)
 
         try:
@@ -127,6 +132,24 @@ class RangeSlider(QWidget):
                 low = max(self._min, high - sep)
         return int(low), int(high)
 
+    def _show_block_feedback(self):
+        """Flash the active handle red to indicate a blocked drag."""
+        self._blocked_until = time.monotonic() + 0.4
+        self.setCursor(Qt.ForbiddenCursor)
+        self.update()
+
+        def _restore():
+            self.unsetCursor()
+            self.update()
+
+        QTimer.singleShot(400, _restore)
+
+    def _show_block_highlight(self):
+        """Highlight this slider's band red to show it's blocking another slider."""
+        self._block_highlight_until = time.monotonic() + 0.4
+        self.update()
+        QTimer.singleShot(400, self.update)
+
     def values(self) -> Tuple[int, int]:
         """Get the current range values."""
         return self._low, self._high
@@ -200,11 +223,32 @@ class RangeSlider(QWidget):
         painter.setPen(Qt.NoPen)
         painter.drawRect(QRect(min(x1, x2), cy - track_h // 2, abs(x2 - x1), track_h))
 
+        # Block-highlight overlay on the band (semi-transparent red)
+        if time.monotonic() < self._block_highlight_until:
+            painter.setBrush(QColor(204, 51, 51, 68))
+            painter.setPen(Qt.NoPen)
+            painter.drawRect(QRect(min(x1, x2), cy - track_h // 2, abs(x2 - x1), track_h))
+
         # Handles
         handle_w = max(8, track_h * 2)
-        painter.setBrush(QColor("#dddddd"))
-        painter.setPen(QPen(QColor("#222222"), 1))
+        is_blocked = time.monotonic() < self._blocked_until
+
+        # Low handle
+        if is_blocked and self._dragging == "low":
+            painter.setBrush(QColor("#cc3333"))
+            painter.setPen(QPen(QColor("#ff4444"), 1))
+        else:
+            painter.setBrush(QColor("#dddddd"))
+            painter.setPen(QPen(QColor("#222222"), 1))
         painter.drawRect(QRect(x1 - handle_w // 2, cy - track_h, handle_w, track_h * 2))
+
+        # High handle
+        if is_blocked and self._dragging == "high":
+            painter.setBrush(QColor("#cc3333"))
+            painter.setPen(QPen(QColor("#ff4444"), 1))
+        else:
+            painter.setBrush(QColor("#dddddd"))
+            painter.setPen(QPen(QColor("#222222"), 1))
         painter.drawRect(QRect(x2 - handle_w // 2, cy - track_h, handle_w, track_h * 2))
 
     def mousePressEvent(self, event):
