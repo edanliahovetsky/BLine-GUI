@@ -534,7 +534,8 @@ class ConfigDialog(QDialog):
             try:
                 control.blockSignals(True)
                 if isinstance(control, NoWheelDoubleSpinBox):
-                    control.setValue(float(value))
+                    if value is not None:
+                        control.setValue(float(value))
                 elif isinstance(control, QCheckBox):
                     control.setChecked(self._coerce_bool(value, control.isChecked()))
                 elif isinstance(control, QComboBox):

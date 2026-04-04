@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, cast
 
 from PySide6.QtWidgets import (
     QDoubleSpinBox,
@@ -15,21 +15,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QColor, QCursor
+from PySide6.QtGui import QColor, QCursor, QKeySequence
 
 from ui.qt_compat import Qt
 from ui.sidebar.widgets.segment_bar import SEGMENT_COLORS, SegmentBar, SegmentData
-from ui.sidebar.utils.constants import SPINNER_METADATA
-
-TRANSLATION_KEYS = {"max_velocity_meters_per_sec", "max_acceleration_meters_per_sec2"}
-
-# Constraint keys that support ranged editing
-_RANGED_KEYS = [
-    "max_velocity_meters_per_sec",
-    "max_acceleration_meters_per_sec2",
-    "max_velocity_deg_per_sec",
-    "max_acceleration_deg_per_sec2",
-]
+from ui.sidebar.utils.constants import (
+    SPINNER_METADATA,
+    RANGED_CONSTRAINT_KEYS,
+    TRANSLATION_CONSTRAINT_KEYS,
+    constraint_default_value,
+)
+from models.ranged_constraint_ops import (
+    append_ranged_constraint_instance,
+    split_ranged_constraint_instance,
+)
 
 
 class ConstraintPopout(QWidget):
@@ -37,7 +36,10 @@ class ConstraintPopout(QWidget):
 
     closed = Signal()
     segmentSelectedInPopout = Signal(str, int)  # key, segment_index
+    aboutToChange = Signal()  # emitted BEFORE model mutation for undo snapshots
     modelChanged = Signal()
+    undoRequested = Signal()
+    redoRequested = Signal()
 
     def __init__(self, path, parent=None):
         super().__init__(parent, Qt.Tool | Qt.WindowStaysOnTopHint)
@@ -48,6 +50,7 @@ class ConstraintPopout(QWidget):
         self.setMinimumHeight(200)
 
         self._path = path
+        self._drag_started: bool = False
 
         # Per-key UI state: { key: { "bar", "spinbox", "ranged_list", "selected_idx" } }
         self._rows: Dict[str, dict] = {}
@@ -100,12 +103,7 @@ class ConstraintPopout(QWidget):
         if self._path is None:
             return
 
-        # Find keys that have at least one ranged constraint
-        present_keys: List[str] = []
-        for key in _RANGED_KEYS:
-            ranged = [rc for rc in (self._path.ranged_constraints or []) if rc.key == key]
-            if ranged:
-                present_keys.append(key)
+        present_keys = self._present_keys()
 
         if not present_keys:
             placeholder = QLabel("No ranged constraints defined.")
@@ -118,6 +116,60 @@ class ConstraintPopout(QWidget):
             self._add_constraint_row(key)
 
         self._content_layout.addStretch()
+
+    def refresh_data(self) -> None:
+        """Re-read model state and update bars/spinboxes without destroying widgets.
+
+        Use this instead of rebuild() when only values or boundary positions changed
+        (not the number of constraints or which keys are present).
+        """
+        if self._path is None:
+            return
+
+        if self._present_keys() != list(self._rows):
+            self.rebuild()
+            return
+
+        for key, row in self._rows.items():
+            segments, ranged_list = self._build_segments_for_key(key)
+            row["ranged_list"] = ranged_list
+
+            bar: SegmentBar = row["bar"]
+            bar.set_segments(segments)
+
+            # Update domain size in case elements changed
+            domain_elements = self._get_domain_elements(key)
+            bar.set_domain_size(len(domain_elements))
+            row["domain_size"] = len(domain_elements)
+            bar.set_element_labels(self._get_element_labels(key))
+
+            # Re-select current segment if still valid, update spinbox
+            idx = row["selected_idx"]
+            spinbox: QDoubleSpinBox = row["spinbox"]
+            if 0 <= idx < len(ranged_list):
+                spinbox.blockSignals(True)
+                spinbox.setValue(ranged_list[idx].value)
+                spinbox.blockSignals(False)
+                spinbox.setEnabled(True)
+                bar.blockSignals(True)
+                bar.set_selected_index(idx)
+                bar.blockSignals(False)
+            elif ranged_list:
+                new_idx = len(ranged_list) - 1
+                row["selected_idx"] = new_idx
+                bar.blockSignals(True)
+                bar.set_selected_index(new_idx)
+                bar.blockSignals(False)
+                spinbox.blockSignals(True)
+                spinbox.setValue(ranged_list[new_idx].value)
+                spinbox.blockSignals(False)
+                spinbox.setEnabled(True)
+            else:
+                row["selected_idx"] = -1
+                spinbox.blockSignals(True)
+                spinbox.setValue(0)
+                spinbox.blockSignals(False)
+                spinbox.setEnabled(False)
 
     def select_segment_for_key(self, key: str, segment_index: int) -> None:
         """Select a segment in the bar for the given key."""
@@ -147,7 +199,39 @@ class ConstraintPopout(QWidget):
     # Close event
     # ------------------------------------------------------------------
 
+    def sync_selection(self, key: str, segment_index: int) -> None:
+        """Silently sync selection from sidebar without emitting signals."""
+        row = self._rows.get(key)
+        if row is None:
+            return
+        row["selected_idx"] = segment_index
+        bar: SegmentBar = row["bar"]
+        bar.blockSignals(True)
+        bar.set_selected_index(segment_index)
+        bar.blockSignals(False)
+        spinbox: QDoubleSpinBox = row["spinbox"]
+        ranged_list = row["ranged_list"]
+        if 0 <= segment_index < len(ranged_list):
+            spinbox.blockSignals(True)
+            spinbox.setValue(ranged_list[segment_index].value)
+            spinbox.blockSignals(False)
+            spinbox.setEnabled(True)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.matches(QKeySequence.StandardKey.Undo):
+            self.undoRequested.emit()
+            event.accept()
+            return
+        if event.matches(QKeySequence.StandardKey.Redo):
+            self.redoRequested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def closeEvent(self, event) -> None:  # noqa: N802
+        if self._drag_started:
+            self._drag_started = False
+            self.modelChanged.emit()
         self.closed.emit()
         super().closeEvent(event)
 
@@ -164,7 +248,7 @@ class ConstraintPopout(QWidget):
             Waypoint,
         )
 
-        if key in TRANSLATION_KEYS:
+        if key in TRANSLATION_CONSTRAINT_KEYS:
             return [
                 e
                 for e in self._path.path_elements
@@ -187,9 +271,9 @@ class ConstraintPopout(QWidget):
         )
 
         elements = self._get_domain_elements(key)
-        counters: Dict[type, int] = {}
+        counters: Dict[type[object], int] = {}
         labels: List[str] = []
-        prefix_map = {
+        prefix_map: Dict[type[object], str] = {
             TranslationTarget: "T",
             Waypoint: "W",
             RotationTarget: "R",
@@ -226,7 +310,7 @@ class ConstraintPopout(QWidget):
     def _add_constraint_row(self, key: str) -> None:
         """Build and add a single constraint row to the content layout."""
         meta = SPINNER_METADATA.get(key, {})
-        label_text = meta.get("label", key).replace("<br/>", " ")
+        label_text = str(meta.get("label", key)).replace("<br/>", " ")
 
         domain_elements = self._get_domain_elements(key)
         domain_size = len(domain_elements)
@@ -270,13 +354,16 @@ class ConstraintPopout(QWidget):
         controls.addWidget(value_label)
 
         spinbox = QDoubleSpinBox()
-        rng = meta.get("range", (0, 99999))
+        rng = cast(tuple[float, float], meta.get("range", (0.0, 99999.0)))
+        step_value = meta.get("step", 0.1)
+        step = float(step_value) if isinstance(step_value, (int, float)) else 0.1
         spinbox.setMinimum(rng[0])
         spinbox.setMaximum(rng[1])
-        spinbox.setSingleStep(meta.get("step", 0.1))
+        spinbox.setSingleStep(step)
         spinbox.setDecimals(self._decimals_for_key(key))
         spinbox.setSuffix(unit)
         spinbox.setEnabled(False)
+        spinbox.setKeyboardTracking(False)
         spinbox.setFixedWidth(120)
         controls.addWidget(spinbox)
 
@@ -333,6 +420,13 @@ class ConstraintPopout(QWidget):
         btn_split.clicked.connect(lambda _=False, k=key: self._on_split_button(k))
         btn_add.clicked.connect(lambda _=False, k=key: self._on_add_button(k))
 
+        # Auto-select first segment so spinbox is usable after rebuild
+        if ranged_list:
+            bar.blockSignals(True)
+            bar.set_selected_index(0)
+            bar.blockSignals(False)
+            self._on_segment_selected(key, 0)
+
     # ------------------------------------------------------------------
     # Signal handlers
     # ------------------------------------------------------------------
@@ -357,6 +451,9 @@ class ConstraintPopout(QWidget):
         self.segmentSelectedInPopout.emit(key, idx)
 
     def _on_boundary_dragged(self, key: str, idx: int, start: int, end: int) -> None:
+        if not self._drag_started:
+            self._drag_started = True
+            self.aboutToChange.emit()
         row = self._rows.get(key)
         if row is None:
             return
@@ -367,6 +464,9 @@ class ConstraintPopout(QWidget):
             rc.end_ordinal = end
 
     def _on_segment_moved(self, key: str, idx: int, start: int, end: int) -> None:
+        if not self._drag_started:
+            self._drag_started = True
+            self.aboutToChange.emit()
         row = self._rows.get(key)
         if row is None:
             return
@@ -375,11 +475,14 @@ class ConstraintPopout(QWidget):
             rc = ranged_list[idx]
             rc.start_ordinal = start
             rc.end_ordinal = end
-            self.modelChanged.emit()
+            # No modelChanged here — _on_boundary_drag_finished handles commit on mouse release
 
     def _on_adjacent_boundary_dragged(
         self, key: str, a_idx: int, a_s: int, a_e: int, b_idx: int, b_s: int, b_e: int
     ) -> None:
+        if not self._drag_started:
+            self._drag_started = True
+            self.aboutToChange.emit()
         row = self._rows.get(key)
         if row is None:
             return
@@ -392,6 +495,7 @@ class ConstraintPopout(QWidget):
             ranged_list[b_idx].end_ordinal = b_e
 
     def _on_boundary_drag_finished(self, key: str) -> None:
+        self._drag_started = False
         self.modelChanged.emit()
 
     def _on_gap_double_clicked(self, key: str, start: int, end: int) -> None:
@@ -403,6 +507,7 @@ class ConstraintPopout(QWidget):
             return
         ranged_list = row["ranged_list"]
         if 0 <= idx < len(ranged_list):
+            self.aboutToChange.emit()
             rc = ranged_list[idx]
             self._path.ranged_constraints.remove(rc)
             self.rebuild()
@@ -423,10 +528,11 @@ class ConstraintPopout(QWidget):
         idx = row["selected_idx"]
         ranged_list = row["ranged_list"]
         if 0 <= idx < len(ranged_list):
+            self.aboutToChange.emit()
             ranged_list[idx].value = value
             # Update bar segment value
             bar: SegmentBar = row["bar"]
-            segs = list(bar._segments)
+            segs = bar.segments()
             if 0 <= idx < len(segs):
                 segs[idx] = SegmentData(
                     segs[idx].start_ordinal,
@@ -458,71 +564,60 @@ class ConstraintPopout(QWidget):
         if row is None:
             return
         domain_size = row["domain_size"]
-        ranged_list = row["ranged_list"]
-
-        # Find the first gap
-        covered: set = set()
-        for rc in ranged_list:
-            for o in range(rc.start_ordinal, rc.end_ordinal + 1):
-                covered.add(o)
-
-        gap_start: Optional[int] = None
-        gap_end: Optional[int] = None
-        for o in range(1, domain_size + 1):
-            if o not in covered:
-                if gap_start is None:
-                    gap_start = o
-                gap_end = o
-            else:
-                if gap_start is not None:
-                    break
-
-        if gap_start is not None and gap_end is not None:
-            self._create_constraint(key, gap_start, gap_end)
-        else:
+        self.aboutToChange.emit()
+        new_rc = append_ranged_constraint_instance(
+            self._path.ranged_constraints,
+            key=key,
+            value=constraint_default_value(key),
+            total=domain_size,
+        )
+        if new_rc is None:
             QToolTip.showText(QCursor.pos(), "All elements are covered")
+            return
+        self.rebuild()
+        self.modelChanged.emit()
 
     # ------------------------------------------------------------------
     # Model mutations
     # ------------------------------------------------------------------
 
-    def _create_constraint(self, key: str, start: int, end: int) -> None:
+    def _create_constraint(
+        self,
+        key: str,
+        start: int,
+        end: int,
+        *,
+        emit_about_to_change: bool = True,
+        rebuild: bool = True,
+        emit_model_changed: bool = True,
+    ) -> None:
         """Create a new RangedConstraint and rebuild."""
         from models.path_model import RangedConstraint
 
-        meta = SPINNER_METADATA.get(key, {})
-        rng = meta.get("range", (0, 99999))
-        default_value = rng[0] if rng[0] > 0 else 1.0
+        if emit_about_to_change:
+            self.aboutToChange.emit()
 
         rc = RangedConstraint(
             key=key,
-            value=default_value,
+            value=constraint_default_value(key),
             start_ordinal=start,
             end_ordinal=end,
         )
         self._path.ranged_constraints.append(rc)
-        self.rebuild()
-        self.modelChanged.emit()
+        if rebuild:
+            self.rebuild()
+        if emit_model_changed:
+            self.modelChanged.emit()
 
     def _split_constraint(self, key: str, rc) -> None:
         """Split a RangedConstraint at its midpoint."""
-        from models.path_model import RangedConstraint
-
         if rc.end_ordinal - rc.start_ordinal < 1:
             # Cannot split a single-ordinal constraint
             return
 
-        mid = (rc.start_ordinal + rc.end_ordinal) // 2
-
-        new_rc = RangedConstraint(
-            key=key,
-            value=rc.value,
-            start_ordinal=mid + 1,
-            end_ordinal=rc.end_ordinal,
-        )
-        rc.end_ordinal = mid
-
-        self._path.ranged_constraints.append(new_rc)
+        self.aboutToChange.emit()
+        if split_ranged_constraint_instance(self._path.ranged_constraints, rc) is None:
+            return
         self.rebuild()
         self.modelChanged.emit()
 
@@ -530,13 +625,21 @@ class ConstraintPopout(QWidget):
     # Helpers
     # ------------------------------------------------------------------
 
+    def _present_keys(self) -> List[str]:
+        """Return ranged constraint keys currently represented in the model."""
+        present_keys: List[str] = []
+        for key in RANGED_CONSTRAINT_KEYS:
+            if any(rc.key == key for rc in (self._path.ranged_constraints or [])):
+                present_keys.append(key)
+        return present_keys
+
     @staticmethod
     def _unit_for_key(key: str) -> str:
         """Extract a clean unit suffix like ' m/s' from SPINNER_METADATA label."""
         import re
 
         meta = SPINNER_METADATA.get(key, {})
-        label = meta.get("label", "").replace("<br/>", " ")
+        label = str(meta.get("label", "")).replace("<br/>", " ")
         m = re.search(r"\(([^)]+)\)\s*$", label)
         if m:
             unit = m.group(1)
@@ -549,7 +652,8 @@ class ConstraintPopout(QWidget):
     def _decimals_for_key(key: str) -> int:
         """Determine decimal places for a key's spinbox."""
         meta = SPINNER_METADATA.get(key, {})
-        step = meta.get("step", 0.1)
+        step_value = meta.get("step", 0.1)
+        step = float(step_value) if isinstance(step_value, (int, float)) else 0.1
         if step >= 1.0:
             return 1
         s = str(step)

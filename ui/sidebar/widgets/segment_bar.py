@@ -98,6 +98,10 @@ class SegmentBar(QWidget):
         self._segments = list(segments)
         self.update()
 
+    def segments(self) -> List[SegmentData]:
+        """Return a copy of the current segment list."""
+        return list(self._segments)
+
     def set_selected_index(self, index: int) -> None:
         """Select a segment by index (-1 for none).  Emits *segmentSelected* if changed."""
         index = int(index)
@@ -283,10 +287,12 @@ class SegmentBar(QWidget):
             painter.setFont(value_font)
 
             full_text = f"{seg.value:.1f}{self._unit_suffix}"
+            medium_text = f"{seg.value:.1f}"
             short_text = f"{seg.value:.0f}"
             ellipsis = "..."
 
             full_tw = vfm.horizontalAdvance(full_text)
+            medium_tw = vfm.horizontalAdvance(medium_text)
             short_tw = vfm.horizontalAdvance(short_text)
             ellipsis_tw = vfm.horizontalAdvance(ellipsis)
 
@@ -295,6 +301,9 @@ class SegmentBar(QWidget):
             if full_tw + 4 <= seg_w:
                 text = full_text
                 tw = full_tw
+            elif medium_tw + 4 <= seg_w:
+                text = medium_text
+                tw = medium_tw
             elif short_tw + 4 <= seg_w:
                 text = short_text
                 tw = short_tw
@@ -600,6 +609,15 @@ class SegmentBar(QWidget):
             return
 
         super().keyPressEvent(event)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        content_w = self._content_width()
+        widget_w = self.width()
+        if content_w <= widget_w:
+            self._scroll_offset = 0
+        else:
+            self._scroll_offset = min(self._scroll_offset, content_w - widget_w)
 
     def leaveEvent(self, event) -> None:  # noqa: N802
         self._hovered_boundary = None

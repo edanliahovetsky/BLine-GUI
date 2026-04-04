@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QCoreApplication
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -12,9 +16,9 @@ if str(ROOT) not in sys.path:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def qt_core_app():
-    """Ensure QSettings and other QtCore classes can initialize during tests."""
-    app = QCoreApplication.instance()
+def qt_app():
+    """Ensure Qt widgets and core classes can initialize during tests."""
+    app = QApplication.instance()
     if app is None:
-        app = QCoreApplication([])
+        app = QApplication([])
     yield app

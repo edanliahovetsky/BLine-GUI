@@ -53,6 +53,9 @@ class Sidebar(QWidget):
     popoutOpened = Signal()
     popoutClosed = Signal()
     popoutSegmentSelected = Signal(str, int, int)  # key, start_ordinal, end_ordinal
+    # Forward undo/redo requests from popout
+    undoRequested = Signal()
+    redoRequested = Signal()
 
     def __init__(self, path=Path()):
         super().__init__()
@@ -461,6 +464,9 @@ class Sidebar(QWidget):
         self.constraint_manager.popoutOpened.connect(self.popoutOpened)
         self.constraint_manager.popoutClosed.connect(self.popoutClosed)
         self.constraint_manager.popoutSegmentSelected.connect(self.popoutSegmentSelected)
+        # Forward undo/redo requests from popout
+        self.constraint_manager.undoRequested.connect(self.undoRequested)
+        self.constraint_manager.redoRequested.connect(self.redoRequested)
 
         # Property editor signals
         self.property_editor.propertyChanged.connect(self.on_attribute_change)
@@ -732,6 +738,12 @@ class Sidebar(QWidget):
         # And restore again after a short delay to overcome any deferred Qt adjustments
         QTimer.singleShot(10, restore_scrolls)
         QTimer.singleShot(50, restore_scrolls)
+
+        # Sync popout if open — element changes affect domain sizes and ordinals
+        try:
+            self.constraint_manager._sync_popout(full_rebuild=True)
+        except Exception:
+            pass
 
     def on_item_selected(self):
         """Handle selection of an element in the list."""
@@ -1192,6 +1204,7 @@ class Sidebar(QWidget):
 
                 # Update via constraint manager
                 self.constraint_manager.update_constraint_value(key, float(value))
+                self.constraint_manager._sync_popout()
             else:
                 # Element property
                 entity = self._get_entity_name(element)
@@ -1234,6 +1247,7 @@ class Sidebar(QWidget):
         # Check if it's a path constraint
         if key in PATH_CONSTRAINT_KEYS:
             self.constraint_manager.remove_constraint(key)
+            self.constraint_manager._sync_popout(full_rebuild=True)
         else:
             # Set property to None
             self.property_editor.set_property_value(key, None, element)

@@ -2,7 +2,6 @@
 """Constraint manager component for handling path constraints and segment bars."""
 
 from typing import Dict, Optional, Tuple, Any, List
-import math
 import traceback
 from PySide6.QtCore import QObject, Signal, QTimer, QEvent
 from PySide6.QtWidgets import (
@@ -17,8 +16,18 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QCursor, QMouseEvent, QIcon, QColor
 from PySide6.QtCore import QSize
 from models.path_model import Path, RangedConstraint
+from models.ranged_constraint_ops import (
+    append_ranged_constraint_instance,
+    split_ranged_constraint_instance,
+)
 from ..widgets import NoWheelDoubleSpinBox
-from ..utils import SPINNER_METADATA, PATH_CONSTRAINT_KEYS, NON_RANGED_CONSTRAINT_KEYS
+from ..utils import (
+    SPINNER_METADATA,
+    PATH_CONSTRAINT_KEYS,
+    NON_RANGED_CONSTRAINT_KEYS,
+    TRANSLATION_CONSTRAINT_KEYS,
+    constraint_default_value,
+)
 from ui.sidebar.widgets.segment_bar import SegmentBar, SegmentData, SEGMENT_COLORS
 
 from ui.qt_compat import Qt, QSizePolicy, QFormLayoutRoles
@@ -45,6 +54,9 @@ class ConstraintManager(QObject):
     popoutClosed = Signal()
     # Emitted when a segment is selected in the popout: key, start_ordinal, end_ordinal
     popoutSegmentSelected = Signal(str, int, int)
+    # Forwarded from popout so main window can trigger undo/redo
+    undoRequested = Signal()
+    redoRequested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -64,6 +76,12 @@ class ConstraintManager(QObject):
     def set_path(self, path: Path):
         """Set the path to manage constraints for."""
         self.path = path
+        # Update popout reference so it sees fresh objects (e.g. after undo/redo deepcopy)
+        if self._popout_dialog is not None:
+            try:
+                self._popout_dialog.set_path(path)
+            except Exception:
+                pass
 
     def get_default_value(self, key: str) -> float:
         """Get default value for a constraint from config or metadata."""
@@ -77,18 +95,7 @@ class ConstraintManager(QObject):
         if cfg_default is not None:
             return float(cfg_default)
 
-        # Fall back to metadata default
-        meta = SPINNER_METADATA.get(key, {})
-        range_values = meta.get("range")
-        if (
-            isinstance(range_values, tuple)
-            and len(range_values) == 2
-            and isinstance(range_values[0], (int, float))
-        ):
-            range_min = float(range_values[0])
-        else:
-            range_min = 0.0
-        return range_min
+        return constraint_default_value(key)
 
     def add_constraint(self, key: str, value: Optional[float] = None) -> bool:
         """Add a path-level constraint.
@@ -117,101 +124,22 @@ class ConstraintManager(QObject):
             except Exception:
                 pass
         else:
-            # Append a new ranged constraint only if there is a truly free unit
             try:
                 _domain, count = self.get_domain_info_for_key(key)
                 total = int(count) if int(count) > 0 else 1
-                try:
-                    existing_for_key = [
-                        rc
-                        for rc in (getattr(self.path, "ranged_constraints", []) or [])
-                        if getattr(rc, "key", None) == key
-                    ]
-                except Exception:
-                    existing_for_key = []
                 if (
                     not hasattr(self.path, "ranged_constraints")
                     or self.path.ranged_constraints is None
                 ):
                     self.path.ranged_constraints = []
-                # Compute occupied unit ordinals from existing ranges (inclusive model ordinals)
-                occupied_units = set()
-                for rc in existing_for_key:
-                    try:
-                        l = int(getattr(rc, "start_ordinal", 1))
-                        h = int(getattr(rc, "end_ordinal", total))
-                        l = max(1, min(l, total))
-                        h = max(1, min(h, total))
-                        if h < l:
-                            h = l
-                        for u in range(int(l), int(h) + 1):
-                            occupied_units.add(int(u))
-                    except Exception:
-                        continue
-                # If domain fully occupied, attempt to split the largest existing range to make room
-                if len(occupied_units) >= total:
-                    # Identify the largest existing contiguous range
-                    largest_rc = None
-                    largest_len = 0
-                    largest_bounds = (1, 1)
-                    for rc in existing_for_key:
-                        try:
-                            l0 = int(getattr(rc, "start_ordinal", 1))
-                            h0 = int(getattr(rc, "end_ordinal", total))
-                            l0 = max(1, min(l0, total))
-                            h0 = max(1, min(h0, total))
-                            if h0 < l0:
-                                h0 = l0
-                            cur_len = int(h0 - l0 + 1)
-                            if cur_len > largest_len:
-                                largest_len = cur_len
-                                largest_rc = rc
-                                largest_bounds = (int(l0), int(h0))
-                        except Exception:
-                            continue
-                    # Only proceed if we can actually split a range (length >= 2)
-                    if largest_rc is None or largest_len < 2:
-                        return False
-                    # Split into two halves; keep the larger half with the existing rc to minimize impact
-                    left_len = int(math.ceil(largest_len / 2.0))
-                    right_len = int(largest_len - left_len)
-                    l_start, h_end = largest_bounds
-                    left_end = int(l_start + left_len - 1)
-                    # Adjust existing largest to the left half
-                    try:
-                        largest_rc.start_ordinal = int(l_start)
-                        largest_rc.end_ordinal = int(left_end)
-                    except Exception:
-                        pass
-                    # Place the new constraint in the right half
-                    new_rc = RangedConstraint(
-                        key=key,
-                        value=value,
-                        start_ordinal=int(left_end + 1),
-                        end_ordinal=int(h_end),
-                    )
-                    self.path.ranged_constraints.append(new_rc)
-                    # Clear flat value storage for ranged keys and emit
-                    try:
-                        setattr(self.path.constraints, key, None)
-                    except Exception:
-                        pass
-                    self.constraintAdded.emit(key, value)
-                    return True
-                # Create with placeholder ordinals; we'll assign a free slot below
-                new_rc = RangedConstraint(key=key, value=value, start_ordinal=1, end_ordinal=total)
-                # Choose the first free unit (minimal touch of existing ranges)
-                chosen = None
-                for pos in range(1, total + 1):
-                    if pos not in occupied_units:
-                        chosen = pos
-                        break
-                if chosen is None:
-                    # Safety: no free unit found; do not add overlapping range
+                new_rc = append_ranged_constraint_instance(
+                    self.path.ranged_constraints,
+                    key=key,
+                    value=value,
+                    total=total,
+                )
+                if new_rc is None:
                     return False
-                new_rc.start_ordinal = int(chosen)
-                new_rc.end_ordinal = int(chosen)
-                self.path.ranged_constraints.append(new_rc)
             except Exception:
                 pass
             # Clear flat value storage for ranged keys
@@ -365,7 +293,7 @@ class ConstraintManager(QObject):
             Waypoint,
         )
 
-        if key in ("max_velocity_meters_per_sec", "max_acceleration_meters_per_sec2"):
+        if key in TRANSLATION_CONSTRAINT_KEYS:
             count = sum(
                 1
                 for e in self.path.path_elements
@@ -567,6 +495,7 @@ class ConstraintManager(QObject):
 
         # Spinbox (reuse the provided control)
         spinbox = control
+        spinbox.setKeyboardTracking(False)
         try:
             spinbox.blockSignals(True)
             if ranged_list:
@@ -581,6 +510,13 @@ class ConstraintManager(QObject):
         controls_layout.addWidget(spinbox)
         self._segment_spinboxes[key] = spinbox
 
+        # Disconnect any previous valueChanged handlers (from prior rebuilds or
+        # the property editor) to avoid duplicate connections that create
+        # multiple undo entries per change.
+        try:
+            spinbox.valueChanged.disconnect()
+        except (TypeError, RuntimeError):
+            pass
         # Connect spinbox value changes to update selected segment
         spinbox.valueChanged.connect(lambda v, k=key: self._on_segment_spinbox_changed(k, v))
 
@@ -702,6 +638,12 @@ class ConstraintManager(QObject):
                 spinbox.setValue(0)
                 spinbox.blockSignals(False)
                 spinbox.setEnabled(False)
+        # Sync selection to popout (silent — no signal cascade)
+        if self._popout_dialog is not None:
+            try:
+                self._popout_dialog.sync_selection(key, segment_index)
+            except Exception:
+                pass
 
     def _on_segment_boundary_dragged(self, key: str, seg_idx: int, new_start: int, new_end: int):
         """Handle live boundary or segment drag."""
@@ -743,11 +685,11 @@ class ConstraintManager(QObject):
         """Commit boundary drag."""
         self._boundary_drag_started = False
         try:
-            self.userActionOccurred.emit("Edit constraint range")
             self.constraintRangeChanged.emit(key, 0, 0)  # trigger sim rebuild
         except Exception:
             traceback.print_exc()
         self._sync_popout()
+        self._commit_and_resync("Edit constraint range")
 
     def _on_gap_double_clicked(self, key: str, gap_start: int, gap_end: int):
         """Create new constraint in gap."""
@@ -770,12 +712,8 @@ class ConstraintManager(QObject):
         self.path.ranged_constraints.append(rc)
 
         self._rebuild_segment_bar_for_key(key)
-        self._sync_popout()
-
-        try:
-            self.userActionOccurred.emit("Add constraint range")
-        except Exception:
-            traceback.print_exc()
+        self._sync_popout(full_rebuild=True)
+        self._commit_and_resync("Add constraint range")
 
     def _on_segment_delete_requested(self, key: str, seg_idx: int):
         """Delete a constraint segment."""
@@ -797,12 +735,8 @@ class ConstraintManager(QObject):
                 self.constraintRemoved.emit(key)
             else:
                 self._rebuild_segment_bar_for_key(key)
-            self._sync_popout()
-
-            try:
-                self.userActionOccurred.emit("Delete constraint range")
-            except Exception:
-                traceback.print_exc()
+            self._sync_popout(full_rebuild=True)
+            self._commit_and_resync("Delete constraint range")
 
     def _on_segment_split_requested(self, key: str, seg_idx: int):
         """Split a segment at its midpoint."""
@@ -817,37 +751,41 @@ class ConstraintManager(QObject):
             except Exception:
                 traceback.print_exc()
 
-            mid = (rc.start_ordinal + rc.end_ordinal) // 2
-            new_rc = RangedConstraint(key=key, value=rc.value, start_ordinal=mid + 1, end_ordinal=rc.end_ordinal)
-            rc.end_ordinal = mid
-
-            # Insert new rc after the current one in the path's list
-            idx_in_path = None
-            for i, r in enumerate(self.path.ranged_constraints):
-                if r is rc:
-                    idx_in_path = i
-                    break
-            if idx_in_path is not None:
-                self.path.ranged_constraints.insert(idx_in_path + 1, new_rc)
-            else:
-                self.path.ranged_constraints.append(new_rc)
+            if split_ranged_constraint_instance(self.path.ranged_constraints, rc) is None:
+                return
 
             self._rebuild_segment_bar_for_key(key)
-            self._sync_popout()
-
-            try:
-                self.userActionOccurred.emit("Split constraint range")
-            except Exception:
-                traceback.print_exc()
+            self._sync_popout(full_rebuild=True)
+            self._commit_and_resync("Split constraint range")
 
     def _on_segment_spinbox_changed(self, key: str, value: float):
         """Handle spinbox value change for the selected segment."""
         idx = self._selected_segment_indices.get(key, -1)
         rc_list = self._segment_rc_lists.get(key, [])
         if 0 <= idx < len(rc_list):
+            try:
+                self.aboutToChange.emit("Edit constraint value")
+            except Exception:
+                traceback.print_exc()
             rc_list[idx].value = value
             self._rebuild_segment_bar_for_key(key)
+            self._sync_popout()
             self.constraintValueChanged.emit(key, value)
+            self._commit_and_resync("Edit constraint value")
+
+    def _commit_and_resync(self, description: str):
+        """Emit userActionOccurred and schedule a deferred resync.
+
+        The undo system creates a deferred command (QTimer.singleShot(0, ...))
+        whose execute() replaces ranged_constraints with deepcopy clones.
+        This invalidates our _segment_rc_lists references.  Schedule a resync
+        at 0ms (FIFO after the undo command) to pick up the new objects.
+        """
+        try:
+            self.userActionOccurred.emit(description)
+        except Exception:
+            traceback.print_exc()
+        QTimer.singleShot(0, self._deferred_resync_after_undo)
 
     # ------------------------------------------------------------------
     # Segment bar rebuild helper
@@ -881,19 +819,6 @@ class ConstraintManager(QObject):
             self._on_segment_selected(key, new_idx, emit_preview=False)
         else:
             bar.set_selected_index(-1)
-
-    # ------------------------------------------------------------------
-    # Ranged constraint value update (internal)
-    # ------------------------------------------------------------------
-
-    def _update_single_ranged_constraint_value(self, key: str, rc_obj, value: float):
-        """Update the value for one ranged constraint instance (internal)."""
-        try:
-            rc_obj.value = float(value)
-        except (TypeError, ValueError):
-            rc_obj.value = value
-        # Emit generic value changed signal
-        self.constraintValueChanged.emit(key, float(value))
 
     # ------------------------------------------------------------------
     # Segment bar lifecycle
@@ -947,16 +872,30 @@ class ConstraintManager(QObject):
 
         self._popout_dialog = ConstraintPopout(self.path)
         self._popout_dialog.closed.connect(self._on_popout_closed)
+        self._popout_dialog.aboutToChange.connect(
+            lambda: self.aboutToChange.emit("Edit constraint (popout)")
+        )
         self._popout_dialog.modelChanged.connect(self._on_popout_model_changed)
         self._popout_dialog.segmentSelectedInPopout.connect(self._on_popout_segment_selected)
+        self._popout_dialog.undoRequested.connect(self.undoRequested)
+        self._popout_dialog.redoRequested.connect(self.redoRequested)
         self._popout_dialog.show()
         self.popoutOpened.emit()
 
-    def _sync_popout(self):
-        """Rebuild the popout dialog to reflect sidebar model changes."""
+    def _sync_popout(self, full_rebuild=False):
+        """Sync the popout dialog to reflect sidebar model changes.
+
+        Args:
+            full_rebuild: If True, destroy and recreate all widgets (for structural
+                changes like add/remove/split).  If False, do a lightweight data
+                refresh that preserves widgets and user focus.
+        """
         if self._popout_dialog is not None:
             try:
-                self._popout_dialog.rebuild()
+                if full_rebuild:
+                    self._popout_dialog.rebuild()
+                else:
+                    self._popout_dialog.refresh_data()
             except Exception:
                 pass
 
@@ -972,15 +911,36 @@ class ConstraintManager(QObject):
             try:
                 self._rebuild_segment_bar_for_key(key)
             except Exception:
-                pass
-        # Forward the change
+                traceback.print_exc()
+        # Trigger canvas/sim refresh — the undo system's first-execute callback is
+        # suppressed for "Edit …" descriptions, so this is the only refresh path.
         try:
             self.constraintRangeChanged.emit("", 0, 0)
         except Exception:
             pass
+        # Complete the undo snapshot (aboutToChange was emitted by the popout BEFORE mutation)
+        try:
+            self.userActionOccurred.emit("Edit constraint (popout)")
+        except Exception:
+            pass
+        # The undo system creates a deferred command (QTimer.singleShot(0, ...))
+        # whose execute() replaces ranged_constraints with deepcopy clones,
+        # breaking the popout's object references.  Schedule a resync at 0ms too;
+        # Qt processes same-timeout timers FIFO, so the undo command (registered
+        # first via userActionOccurred) fires before this resync.
+        QTimer.singleShot(0, self._deferred_resync_after_undo)
+
+    def _deferred_resync_after_undo(self):
+        """Rebuild sidebar bars and popout after the undo system replaces objects."""
+        for key in list(self._segment_bars.keys()):
+            try:
+                self._rebuild_segment_bar_for_key(key)
+            except Exception:
+                pass
+        self._sync_popout()
 
     def _on_popout_segment_selected(self, key: str, segment_index: int):
-        """Handle segment selection in the popout -- emit highlight info."""
+        """Handle segment selection in the popout -- sync sidebar and emit highlight."""
         rc_list = [
             rc for rc in (self.path.ranged_constraints or []) if rc.key == key
         ]
@@ -991,6 +951,19 @@ class ConstraintManager(QObject):
             # Also show the green range overlay on the canvas
             self._active_preview_key = key
             self.constraintRangePreviewRequested.emit(key, rc.start_ordinal, rc.end_ordinal)
+        # Sync sidebar bar and spinbox selection (silent — no signal cascade)
+        self._selected_segment_indices[key] = segment_index
+        bar = self._segment_bars.get(key)
+        if bar is not None:
+            bar.blockSignals(True)
+            bar.set_selected_index(segment_index)
+            bar.blockSignals(False)
+        spinbox = self._segment_spinboxes.get(key)
+        if spinbox is not None and 0 <= segment_index < len(rc_list):
+            spinbox.blockSignals(True)
+            spinbox.setValue(rc_list[segment_index].value)
+            spinbox.blockSignals(False)
+            spinbox.setEnabled(True)
 
     def handle_canvas_element_clicked(self, global_index: int):
         """Handle a canvas element click while popout is active.
@@ -1013,10 +986,8 @@ class ConstraintManager(QObject):
         element = self.path.path_elements[global_index]
 
         # For each active key in the popout, figure out the ordinal
-        TRANSLATION_KEYS = {"max_velocity_meters_per_sec", "max_acceleration_meters_per_sec2"}
-
         for key, row in self._popout_dialog._rows.items():
-            if key in TRANSLATION_KEYS:
+            if key in TRANSLATION_CONSTRAINT_KEYS:
                 domain_types = (TranslationTarget, Waypoint)
             else:
                 domain_types = (Waypoint, RotationTarget, EventTrigger)

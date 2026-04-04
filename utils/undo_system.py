@@ -7,6 +7,7 @@ It supports both path modifications and configuration changes.
 
 from __future__ import annotations
 import copy
+import traceback
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Callable, TYPE_CHECKING
 from dataclasses import replace
@@ -68,7 +69,7 @@ class PathCommand(Command):
                 getattr(self.new_state, "ranged_constraints", [])
             )
         except Exception:
-            pass
+            traceback.print_exc()
         # Trigger callback except for the very first execute when suppression requested
         if self.on_change_callback:
             if not self._has_executed_once or not self._suppress_first_callback:
@@ -93,7 +94,7 @@ class PathCommand(Command):
                 getattr(self.old_state, "ranged_constraints", [])
             )
         except Exception:
-            pass
+            traceback.print_exc()
         callback = self.on_undo_callback or self.on_change_callback
         if callback:
             callback()

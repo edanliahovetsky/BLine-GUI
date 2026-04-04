@@ -172,6 +172,9 @@ class MainWindow(WindowEventMixin, QMainWindow):
         # Sidebar -> undo management
         self.sidebar.aboutToChange.connect(self._on_sidebar_about_to_change)
         self.sidebar.userActionOccurred.connect(self._on_sidebar_action_committed)
+        # Popout undo/redo forwarding
+        self.sidebar.undoRequested.connect(self.undo_manager.undo)
+        self.sidebar.redoRequested.connect(self.undo_manager.redo)
 
         # Canvas interactions -> update model and sidebar
         self.canvas.elementMoved.connect(self._on_canvas_element_moved, Qt.QueuedConnection)

@@ -151,6 +151,20 @@ NON_RANGED_CONSTRAINT_KEYS = [
     "end_rotation_tolerance_deg",
 ]
 
+# Constraint keys that support ranged (per-segment) editing
+RANGED_CONSTRAINT_KEYS = [
+    "max_velocity_meters_per_sec",
+    "max_acceleration_meters_per_sec2",
+    "max_velocity_deg_per_sec",
+    "max_acceleration_deg_per_sec2",
+]
+
+# Constraint keys in the translation domain (TranslationTarget + Waypoint)
+TRANSLATION_CONSTRAINT_KEYS = frozenset({
+    "max_velocity_meters_per_sec",
+    "max_acceleration_meters_per_sec2",
+})
+
 
 def _extract_unit(label: str) -> str:
     """Extract the unit suffix from a label like 'X (m)' -> ' m'.
@@ -170,7 +184,25 @@ def _extract_unit(label: str) -> str:
 
 # Pre-computed mapping of spinner key -> unit suffix string (e.g. " m", " deg")
 SPINNER_UNITS = {
-    key: _extract_unit(data.get("label", ""))
+    key: _extract_unit(str(data.get("label", "")))
     for key, data in SPINNER_METADATA.items()
     if data.get("type", "spinner") == "spinner"
 }
+
+
+def constraint_default_value(key: str) -> float:
+    """Return the metadata-backed default value for a constraint spinner."""
+    meta = SPINNER_METADATA.get(key, {})
+    default_value = meta.get("default")
+    if isinstance(default_value, (int, float)):
+        return float(default_value)
+
+    range_values = meta.get("range")
+    if (
+        isinstance(range_values, tuple)
+        and len(range_values) == 2
+        and isinstance(range_values[0], (int, float))
+    ):
+        return float(range_values[0])
+
+    return 0.0
