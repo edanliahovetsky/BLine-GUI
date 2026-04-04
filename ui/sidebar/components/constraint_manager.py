@@ -698,13 +698,7 @@ class ConstraintManager(QObject):
         except Exception:
             traceback.print_exc()
 
-        # Get default value from SPINNER_METADATA
-        meta = SPINNER_METADATA.get(key, {})
-        default_val = meta.get("default", meta.get("minimum", 0.0))
-        # Use range minimum as fallback
-        range_values = meta.get("range")
-        if default_val == 0.0 and isinstance(range_values, tuple) and len(range_values) == 2:
-            default_val = float(range_values[0])
+        default_val = self.get_default_value(key)
 
         rc = RangedConstraint(key=key, value=default_val, start_ordinal=gap_start, end_ordinal=gap_end)
         if self.path.ranged_constraints is None:
