@@ -19,6 +19,11 @@ from .element_helpers import (
     project_point_between_neighbors,
     get_safe_position_for_rotation,
 )
+from .ranged_constraint_ui import (
+    get_constraint_domain_elements,
+    get_constraint_domain_info,
+    get_constraint_domain_labels,
+)
 
 __all__ = [
     "ElementType",
@@ -38,4 +43,7 @@ __all__ = [
     "get_element_bounding_radius",
     "project_point_between_neighbors",
     "get_safe_position_for_rotation",
+    "get_constraint_domain_elements",
+    "get_constraint_domain_info",
+    "get_constraint_domain_labels",
 ]

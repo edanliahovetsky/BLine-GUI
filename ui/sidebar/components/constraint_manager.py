@@ -27,6 +27,7 @@ from ..utils import (
     NON_RANGED_CONSTRAINT_KEYS,
     TRANSLATION_CONSTRAINT_KEYS,
     constraint_default_value,
+    get_constraint_domain_info,
 )
 from ui.sidebar.widgets.segment_bar import SegmentBar, SegmentData, SEGMENT_COLORS
 
@@ -283,30 +284,7 @@ class ConstraintManager(QObject):
         """Return (domain_type, count) for the given key.
         domain_type in {"translation", "rotation"}.
         """
-        if self.path is None:
-            return "translation", 0
-
-        from models.path_model import (
-            EventTrigger,
-            RotationTarget,
-            TranslationTarget,
-            Waypoint,
-        )
-
-        if key in TRANSLATION_CONSTRAINT_KEYS:
-            count = sum(
-                1
-                for e in self.path.path_elements
-                if isinstance(e, (TranslationTarget, Waypoint))
-            )
-            return "translation", int(count)
-        else:
-            count = sum(
-                1
-                for e in self.path.path_elements
-                if isinstance(e, (Waypoint, RotationTarget, EventTrigger))
-            )
-            return "rotation", int(count)
+        return get_constraint_domain_info(self.path, key)
 
     def create_segment_bar_for_key(
         self,
@@ -857,6 +835,9 @@ class ConstraintManager(QObject):
         if self._popout_dialog is not None:
             try:
                 self._popout_dialog.set_path(self.path)
+                for key, idx in self._selected_segment_indices.items():
+                    if idx >= 0:
+                        self._popout_dialog.sync_selection(key, idx)
                 self._popout_dialog.show()
                 self._popout_dialog.raise_()
                 self._popout_dialog.activateWindow()
@@ -873,6 +854,9 @@ class ConstraintManager(QObject):
         self._popout_dialog.segmentSelectedInPopout.connect(self._on_popout_segment_selected)
         self._popout_dialog.undoRequested.connect(self.undoRequested)
         self._popout_dialog.redoRequested.connect(self.redoRequested)
+        for key, idx in self._selected_segment_indices.items():
+            if idx >= 0:
+                self._popout_dialog.sync_selection(key, idx)
         self._popout_dialog.show()
         self.popoutOpened.emit()
 

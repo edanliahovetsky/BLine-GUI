@@ -25,6 +25,10 @@ from ui.sidebar.utils.constants import (
     TRANSLATION_CONSTRAINT_KEYS,
     constraint_default_value,
 )
+from ui.sidebar.utils.ranged_constraint_ui import (
+    get_constraint_domain_elements,
+    get_constraint_domain_labels,
+)
 from models.ranged_constraint_ops import (
     append_ranged_constraint_instance,
     split_ranged_constraint_instance,
@@ -138,10 +142,10 @@ class ConstraintPopout(QWidget):
             bar.set_segments(segments)
 
             # Update domain size in case elements changed
-            domain_elements = self._get_domain_elements(key)
+            domain_elements = get_constraint_domain_elements(self._path, key)
             bar.set_domain_size(len(domain_elements))
             row["domain_size"] = len(domain_elements)
-            bar.set_element_labels(self._get_element_labels(key))
+            bar.set_element_labels(get_constraint_domain_labels(self._path, key))
 
             # Re-select current segment if still valid, update spinbox
             idx = row["selected_idx"]
@@ -239,53 +243,6 @@ class ConstraintPopout(QWidget):
     # Domain helpers
     # ------------------------------------------------------------------
 
-    def _get_domain_elements(self, key: str) -> list:
-        """Get the domain elements for a constraint key."""
-        from models.path_model import (
-            EventTrigger,
-            RotationTarget,
-            TranslationTarget,
-            Waypoint,
-        )
-
-        if key in TRANSLATION_CONSTRAINT_KEYS:
-            return [
-                e
-                for e in self._path.path_elements
-                if isinstance(e, (TranslationTarget, Waypoint))
-            ]
-        else:
-            return [
-                e
-                for e in self._path.path_elements
-                if isinstance(e, (Waypoint, RotationTarget, EventTrigger))
-            ]
-
-    def _get_element_labels(self, key: str) -> List[str]:
-        """Build brief element labels like T1, W2, R1, E1."""
-        from models.path_model import (
-            EventTrigger,
-            RotationTarget,
-            TranslationTarget,
-            Waypoint,
-        )
-
-        elements = self._get_domain_elements(key)
-        counters: Dict[type[object], int] = {}
-        labels: List[str] = []
-        prefix_map: Dict[type[object], str] = {
-            TranslationTarget: "T",
-            Waypoint: "W",
-            RotationTarget: "R",
-            EventTrigger: "E",
-        }
-        for e in elements:
-            t = type(e)
-            counters[t] = counters.get(t, 0) + 1
-            prefix = prefix_map.get(t, "?")
-            labels.append(f"{prefix}{counters[t]}")
-        return labels
-
     def _build_segments_for_key(
         self, key: str
     ) -> Tuple[List[SegmentData], list]:
@@ -312,9 +269,9 @@ class ConstraintPopout(QWidget):
         meta = SPINNER_METADATA.get(key, {})
         label_text = str(meta.get("label", key)).replace("<br/>", " ")
 
-        domain_elements = self._get_domain_elements(key)
+        domain_elements = get_constraint_domain_elements(self._path, key)
         domain_size = len(domain_elements)
-        element_labels = self._get_element_labels(key)
+        element_labels = get_constraint_domain_labels(self._path, key)
         segments, ranged_list = self._build_segments_for_key(key)
 
         # --- Container ---
