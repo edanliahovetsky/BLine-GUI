@@ -375,7 +375,7 @@ def _load_ranged_constraints(path: Path, ranged_block: Any) -> None:
         for element in path.path_elements:
             if isinstance(element, (TranslationTarget, Waypoint)):
                 anchor_count += 1
-            if isinstance(element, (RotationTarget, Waypoint)):
+            if isinstance(element, (RotationTarget, Waypoint, EventTrigger)):
                 rotation_event_count += 1
 
         for entry in normalized:
