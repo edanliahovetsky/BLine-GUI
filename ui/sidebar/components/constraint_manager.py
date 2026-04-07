@@ -627,6 +627,14 @@ class ConstraintManager(QObject):
         """Handle live boundary or segment drag."""
         if not self._boundary_drag_started:
             self._boundary_drag_started = True
+            # Refresh references — the undo system may have replaced
+            # path.ranged_constraints with deepcopy clones since the bar
+            # was last built, making _segment_rc_lists stale.
+            ranged_list = [
+                rc for rc in (self.path.ranged_constraints or []) if rc.key == key
+            ]
+            ranged_list.sort(key=lambda rc: rc.start_ordinal)
+            self._segment_rc_lists[key] = ranged_list
             try:
                 self.aboutToChange.emit("Edit constraint range")
             except Exception:
@@ -646,6 +654,11 @@ class ConstraintManager(QObject):
         """Handle dragging a shared boundary between two adjacent segments."""
         if not self._boundary_drag_started:
             self._boundary_drag_started = True
+            ranged_list = [
+                rc for rc in (self.path.ranged_constraints or []) if rc.key == key
+            ]
+            ranged_list.sort(key=lambda rc: rc.start_ordinal)
+            self._segment_rc_lists[key] = ranged_list
             try:
                 self.aboutToChange.emit("Edit constraint range")
             except Exception:
