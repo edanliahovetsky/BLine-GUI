@@ -23,7 +23,7 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(Path(SPECPATH) / 'pyi_rth_stderr.py')],
     excludes=[],
     noarchive=False,
 )
@@ -52,6 +52,7 @@ exe = EXE(
 coll = COLLECT(
     exe,
     a.binaries,
+    a.zipfiles,
     a.datas,
     strip=False,
     upx=True,
@@ -63,5 +64,5 @@ app = BUNDLE(
     coll,
     name='BLine.app',
     icon=str(icns_path) if icns_path.exists() else None,
-    bundle_identifier=None,
+    bundle_identifier='com.bline.app',
 )

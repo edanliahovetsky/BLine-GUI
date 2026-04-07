@@ -51,11 +51,10 @@ No installation or dependencies required!
 
 #### macOS
 
-**DMG (ARM Only)**
-1. Download `BLine-${VERSION}-macOS-${ARCH}.dmg`
-2. Open it
-3. Drag Bline to your Applications folder
-4. Run the Bline applications
+**DMG (Apple Silicon)**
+1. Download `BLine-{version}-macOS-arm64.dmg` from [Releases](https://github.com/edanliahovetsky/BLine-GUI/releases)
+2. Open the DMG and drag BLine to your Applications folder
+3. Launch BLine from Applications
 
 ---
 
