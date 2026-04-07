@@ -19,6 +19,7 @@ jobs:
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.get_version.outputs.version }}
+      is_prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -44,6 +45,18 @@ jobs:
           VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
+
+      - name: Detect prerelease
+        id: prerelease
+        run: |
+          VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          if echo "$VERSION" | grep -qiE '(alpha|beta|rc|dev)'; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "Detected prerelease version: $VERSION"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "Detected stable version: $VERSION"
+          fi
 
   build-linux:
     needs: check-release
@@ -177,9 +190,10 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.check-release.outputs.version }}
-          name: BLine v${{ needs.check-release.outputs.version }}
+          name: BLine v${{ needs.check-release.outputs.version }}${{ needs.check-release.outputs.is_prerelease == 'true' && ' (Preview)' || '' }}
           body: |
             ## BLine v${{ needs.check-release.outputs.version }}
+            ${{ needs.check-release.outputs.is_prerelease == 'true' && '> ⚠️ **This is a pre-release preview.** It may contain bugs or incomplete features. Use in production at your own risk.' || '' }}
 
             ### Downloads
 
@@ -213,6 +227,6 @@ jobs:
           files: |
             artifacts/*
           draft: false
-          prerelease: false
+          prerelease: ${{ needs.check-release.outputs.is_prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
