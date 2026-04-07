@@ -480,8 +480,8 @@ class ConstraintManager(QObject):
                 spinbox.setValue(float(ranged_list[0].value))
         finally:
             spinbox.blockSignals(False)
-        spinbox.setMinimumWidth(90)
-        spinbox.setMaximumWidth(160)
+        spinbox.setMinimumWidth(80)
+        spinbox.setMaximumWidth(130)
         spinbox.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         # Reparent spinbox into controls row
         spinbox.setParent(controls_row)
@@ -499,6 +499,18 @@ class ConstraintManager(QObject):
         spinbox.valueChanged.connect(lambda v, k=key: self._on_segment_spinbox_changed(k, v))
 
         controls_layout.addStretch()
+
+        # Add button (add another constraint of the same type)
+        add_btn = QPushButton()
+        add_btn.setIcon(QIcon(":/assets/add_icon.png"))
+        add_btn.setFixedSize(24, 24)
+        add_btn.setIconSize(QSize(16, 16))
+        add_btn.setToolTip("Add another segment of this constraint type")
+        add_btn.setStyleSheet(
+            "QPushButton { border: none; } QPushButton:hover { background: #555; border-radius: 3px; }"
+        )
+        add_btn.clicked.connect(lambda checked=False, k=key: self._on_add_same_type_requested(k))
+        controls_layout.addWidget(add_btn)
 
         # Delete button
         del_btn = QPushButton()
@@ -681,6 +693,17 @@ class ConstraintManager(QObject):
             traceback.print_exc()
         self._sync_popout()
         self._commit_and_resync("Edit constraint range")
+
+    def _on_add_same_type_requested(self, key: str):
+        """Add another ranged constraint of the same type via the + button."""
+        try:
+            self.aboutToChange.emit("Add constraint range")
+        except Exception:
+            traceback.print_exc()
+        self.add_constraint(key)
+        self._rebuild_segment_bar_for_key(key)
+        self._sync_popout(full_rebuild=True)
+        self._commit_and_resync("Add constraint range")
 
     def _on_gap_double_clicked(self, key: str, gap_start: int, gap_end: int):
         """Create new constraint in gap."""
