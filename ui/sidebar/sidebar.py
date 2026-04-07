@@ -1300,6 +1300,7 @@ class Sidebar(QWidget):
 
         # Refresh UI
         self.refresh_current_selection()
+        self.constraint_manager._sync_popout(full_rebuild=True)
         self.modelChanged.emit()
 
         # Force restore scroll positions after constraint addition
