@@ -48,19 +48,17 @@ cp "${PROJECT_DIR}/assets_rc.py" "${APPDIR}/usr/share/bline/"
 echo "Copying assets..."
 cp -r "${PROJECT_DIR}/assets" "${APPDIR}/usr/share/bline/"
 
-# Create a Python wrapper that adds the application to sys.path
+# Create a shell wrapper that launches the app using the bundled Python
 cat > "${APPDIR}/usr/bin/bline" << 'EOF'
-#!/usr/bin/env python3
-import sys
-import os
+#!/bin/bash
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+APP_DIR="${HERE}/../share/bline"
 
-# Add application directory to Python path
-app_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'share', 'bline')
-sys.path.insert(0, app_dir)
+# Add app dir to PYTHONPATH (AppRun already added site-packages)
+export PYTHONPATH="${APP_DIR}:${PYTHONPATH}"
 
-# Import and run
-from main import main
-sys.exit(main())
+exec python3 "${APP_DIR}/main.py" "$@"
 EOF
 chmod +x "${APPDIR}/usr/bin/bline"
 
@@ -74,6 +72,14 @@ HERE=${SELF%/*}
 # Add the embedded Python to PATH
 export PATH="${HERE}/usr/bin:${PATH}"
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+
+# Point Python at the bundled site-packages so PySide6 etc. are found
+PYTHON_LIB_DIR=$(ls "${HERE}/usr/lib/" | grep "^python3" | head -1)
+export PYTHONPATH="${HERE}/usr/lib/${PYTHON_LIB_DIR}/site-packages:${PYTHONPATH}"
+
+# Clear venv state that would override our paths
+unset VIRTUAL_ENV
+unset PYTHONHOME
 
 # Disable writing .pyc files
 export PYTHONDONTWRITEBYTECODE=1
