@@ -7,6 +7,7 @@ with MainWindow and Sidebar interactions. Further pruning can follow.
 """
 
 from __future__ import annotations
+import bisect
 import math
 from typing import Dict, List, Optional, Tuple, Any
 from PySide6.QtWidgets import (
@@ -172,6 +173,7 @@ class CanvasView(QGraphicsView):
         self._ensure_sim_robot_item()
         self._trail_lines: List[QGraphicsLineItem] = []
         self._trail_points: List[Tuple[float, float]] = []
+        self._trail_visible_count: int = 0
         self.transport = TransportControls(self)
         self.transport.ensure()
         self._range_overlay_lines: List[QGraphicsLineItem] = []
@@ -1386,12 +1388,10 @@ class CanvasView(QGraphicsView):
             return float(self._sim_global_s_by_time.get(key_hint, 0.0))
         if not self._sim_times_sorted:
             return 0.0
-        selected = self._sim_times_sorted[0]
-        for tk in self._sim_times_sorted:
-            if tk <= t_s:
-                selected = tk
-            else:
-                break
+        idx = bisect.bisect_right(self._sim_times_sorted, t_s) - 1
+        if idx < 0:
+            idx = 0
+        selected = self._sim_times_sorted[idx]
         return float(self._sim_global_s_by_time.get(selected, 0.0))
 
     def _update_protrusion_visibility_for_time(self, t_s: float, key_hint: Optional[float] = None):
@@ -1455,6 +1455,7 @@ class CanvasView(QGraphicsView):
                     self.graphics_scene.removeItem(line)
             self._trail_lines.clear()
             self._trail_points.clear()
+            self._trail_visible_count = 0
         except Exception:
             pass
 
@@ -1462,15 +1463,22 @@ class CanvasView(QGraphicsView):
         try:
             self._clear_trail()
             self._trail_points = trail_points.copy()
+            if len(self._trail_points) < 2:
+                return
             orange_pen = QPen(QColor(255, 165, 0), 0.05)
             orange_pen.setCapStyle(Qt.RoundCap)
             for i in range(len(self._trail_points) - 1):
-                line = QGraphicsLineItem()
+                x1, y1 = self._trail_points[i]
+                x2, y2 = self._trail_points[i + 1]
+                p1 = self._scene_from_model(x1, y1)
+                p2 = self._scene_from_model(x2, y2)
+                line = QGraphicsLineItem(p1.x(), p1.y(), p2.x(), p2.y())
                 line.setPen(orange_pen)
                 line.setZValue(14)
                 line.setVisible(False)
                 self.graphics_scene.addItem(line)
                 self._trail_lines.append(line)
+            self._trail_visible_count = 0
         except Exception:
             pass
 
@@ -1478,16 +1486,17 @@ class CanvasView(QGraphicsView):
         try:
             if not self._trail_points or not self._trail_lines:
                 return
-            for i, line in enumerate(self._trail_lines):
-                if i < current_index and i < len(self._trail_points) - 1:
-                    x1, y1 = self._trail_points[i]
-                    x2, y2 = self._trail_points[i + 1]
-                    p1 = self._scene_from_model(x1, y1)
-                    p2 = self._scene_from_model(x2, y2)
-                    line.setLine(p1.x(), p1.y(), p2.x(), p2.y())
-                    line.setVisible(True)
-                else:
-                    line.setVisible(False)
+            target = max(0, min(int(current_index), len(self._trail_lines)))
+            prev = int(getattr(self, "_trail_visible_count", 0))
+            if target == prev:
+                return
+            if target > prev:
+                for i in range(prev, target):
+                    self._trail_lines[i].setVisible(True)
+            else:
+                for i in range(target, prev):
+                    self._trail_lines[i].setVisible(False)
+            self._trail_visible_count = target
         except Exception:
             pass
 
@@ -1542,14 +1551,11 @@ class CanvasView(QGraphicsView):
         try:
             if not self._sim_times_sorted or not self._sim_poses_by_time:
                 return
-            key_index = 0
-            key = 0.0
-            for i, tk in enumerate(self._sim_times_sorted):
-                if tk <= t_s:
-                    key = tk
-                    key_index = i
-                else:
-                    break
+            idx = bisect.bisect_right(self._sim_times_sorted, t_s) - 1
+            if idx < 0:
+                idx = 0
+            key_index = idx
+            key = self._sim_times_sorted[idx]
             x, y, th = self._sim_poses_by_time.get(
                 key, self._sim_poses_by_time[self._sim_times_sorted[0]]
             )
@@ -1620,7 +1626,13 @@ class CanvasView(QGraphicsView):
                         cfg = dict(getattr(self._project_manager, "config", {}) or {})
             except Exception:
                 cfg = {}
-            result = simulate_path(self._path, cfg, dt_s=0.001)
+            # Match the playback tick rate; finer dt only created redundant
+            # samples/trail items that stalled the GUI event loop on slower CPUs.
+            result = simulate_path(
+                self._path,
+                cfg,
+                dt_s=max(0.001, SIMULATION_UPDATE_INTERVAL_MS / 1000.0),
+            )
             self._sim_result = result
             self._sim_poses_by_time = result.poses_by_time
             self._sim_times_sorted = result.times_sorted
