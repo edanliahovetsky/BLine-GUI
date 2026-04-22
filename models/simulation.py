@@ -563,9 +563,11 @@ def simulate_path(
         )
     )
 
-    # Tiny epsilon for exact end goal termination (idealized mechanics)
+    # Tiny positional epsilon and a sub-degree angular epsilon prevent a
+    # discrete-time limit cycle near the final heading from dragging the
+    # simulation out until guard_time.
     _EPS_POS = 1e-3
-    _EPS_ANG = 1e-3
+    _EPS_ANG = math.radians(0.5)
 
     # Default handoff radius from config
     default_handoff_radius = _resolve_constraint(
@@ -742,6 +744,7 @@ def simulate_path(
         v_p_control = math.sqrt(2.0 * base_max_a * remaining)
         # Cap by velocity limit; leave acceleration limiting to the limiter below
         v_des_scalar = max(0.0, min(max_v, v_p_control))
+        angular_error = shortest_angular_distance(desired_theta, theta)
         # If on the final segment and desired velocity collapses to ~0 while still away from the endpoint,
         # nudge toward the endpoint by requesting just enough velocity to reach it within one dt (bounded by max_v).
         if seg_idx == len(segments) - 1 and v_des_scalar <= 1e-9 and dist_to_target > _EPS_POS:
@@ -750,8 +753,6 @@ def simulate_path(
         vx_des = v_des_scalar * ux
         vy_des = v_des_scalar * uy
 
-        # 2ad controller for rotation: omega = sqrt(2 * alpha * |error|)
-        angular_error = shortest_angular_distance(desired_theta, theta)
         omega_control = math.sqrt(2.0 * max_alpha * abs(angular_error))
         # Cap by max_omega and apply sign based on error direction
         omega_des = min(omega_control, max_omega)
