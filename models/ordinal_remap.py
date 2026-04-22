@@ -47,41 +47,26 @@ def remap_ranged_constraints(path: Path, old_elements: List[PathElement]) -> Non
         if new_domain_size == 0:
             continue
 
-        old_start_id = old_domain[rc.start_ordinal - 1] if rc.start_ordinal - 1 < len(old_domain) else None
-        old_end_id = old_domain[rc.end_ordinal - 1] if rc.end_ordinal - 1 < len(old_domain) else None
-
         new_id_to_ordinal = {eid: i + 1 for i, eid in enumerate(new_domain)}
 
-        new_start = new_id_to_ordinal.get(old_start_id) if old_start_id else None
-        new_end = new_id_to_ordinal.get(old_end_id) if old_end_id else None
-
-        if new_start is not None and new_end is not None:
-            if new_start > new_end:
-                new_start, new_end = new_end, new_start
-            rc.start_ordinal = new_start
-            rc.end_ordinal = new_end
+        # Remap the actual covered ordinals rather than only the endpoints.
+        # If an endpoint disappears, clamping to 1/domain-size can manufacture
+        # overlap with neighboring ranges that were previously disjoint.
+        old_start = min(int(rc.start_ordinal), int(rc.end_ordinal))
+        old_end = max(int(rc.start_ordinal), int(rc.end_ordinal))
+        old_range_ids = {
+            old_domain[ord_i - 1]
+            for ord_i in range(old_start, old_end + 1)
+            if 0 <= ord_i - 1 < len(old_domain)
+        }
+        surviving_ordinals = sorted(
+            new_id_to_ordinal[eid]
+            for eid in old_range_ids
+            if eid in new_id_to_ordinal
+        )
+        if surviving_ordinals:
+            rc.start_ordinal = surviving_ordinals[0]
+            rc.end_ordinal = surviving_ordinals[-1]
             surviving.append(rc)
-        elif new_start is not None:
-            rc.start_ordinal = new_start
-            rc.end_ordinal = new_domain_size
-            surviving.append(rc)
-        elif new_end is not None:
-            rc.start_ordinal = 1
-            rc.end_ordinal = new_end
-            surviving.append(rc)
-        else:
-            old_range_ids = set()
-            for ord_i in range(rc.start_ordinal, rc.end_ordinal + 1):
-                if ord_i - 1 < len(old_domain):
-                    old_range_ids.add(old_domain[ord_i - 1])
-            surviving_ordinals = sorted(
-                new_id_to_ordinal[eid]
-                for eid in old_range_ids
-                if eid in new_id_to_ordinal
-            )
-            if surviving_ordinals:
-                rc.start_ordinal = surviving_ordinals[0]
-                rc.end_ordinal = surviving_ordinals[-1]
-                surviving.append(rc)
 
     path.ranged_constraints = surviving

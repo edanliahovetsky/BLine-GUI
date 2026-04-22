@@ -415,8 +415,89 @@ def _load_ranged_constraints(path: Path, ranged_block: Any) -> None:
                     end_ordinal=end_int,
                 )
             )
+        _repair_loaded_ranged_constraints(path)
     except Exception:
         pass
+
+
+def _repair_loaded_ranged_constraints(path: Path) -> None:
+    """Normalize loaded ranged constraints into disjoint, in-bounds runs.
+
+    Older builds could save overlapping same-key ranges after structural edits.
+    Keep file order stable, clamp to the current domain, and trim later overlaps
+    down to the largest uncovered contiguous run.
+    """
+    translation_keys = {
+        "max_velocity_meters_per_sec",
+        "max_acceleration_meters_per_sec2",
+    }
+    rotation_keys = {
+        "max_velocity_deg_per_sec",
+        "max_acceleration_deg_per_sec2",
+    }
+
+    anchor_count = 0
+    rotation_event_count = 0
+    for element in path.path_elements:
+        if isinstance(element, (TranslationTarget, Waypoint)):
+            anchor_count += 1
+        if isinstance(element, (RotationTarget, Waypoint, EventTrigger)):
+            rotation_event_count += 1
+
+    occupied_by_key: Dict[str, set[int]] = {}
+    repaired: List[RangedConstraint] = []
+
+    for rc in path.ranged_constraints:
+        if rc.key in translation_keys:
+            domain_size = anchor_count
+        elif rc.key in rotation_keys:
+            domain_size = rotation_event_count
+        else:
+            repaired.append(rc)
+            continue
+
+        if domain_size <= 0:
+            continue
+
+        start = max(1, min(int(rc.start_ordinal), domain_size))
+        end = max(1, min(int(rc.end_ordinal), domain_size))
+        if end < start:
+            start, end = end, start
+
+        covered = occupied_by_key.setdefault(rc.key, set())
+        best_run: tuple[int, int] | None = None
+        run_start: int | None = None
+
+        for ordinal in range(start, end + 1):
+            if ordinal in covered:
+                if run_start is not None:
+                    candidate = (run_start, ordinal - 1)
+                    if (
+                        best_run is None
+                        or (candidate[1] - candidate[0]) > (best_run[1] - best_run[0])
+                    ):
+                        best_run = candidate
+                    run_start = None
+                continue
+            if run_start is None:
+                run_start = ordinal
+
+        if run_start is not None:
+            candidate = (run_start, end)
+            if (
+                best_run is None
+                or (candidate[1] - candidate[0]) > (best_run[1] - best_run[0])
+            ):
+                best_run = candidate
+
+        if best_run is None:
+            continue
+
+        rc.start_ordinal, rc.end_ordinal = best_run
+        covered.update(range(best_run[0], best_run[1] + 1))
+        repaired.append(rc)
+
+    path.ranged_constraints = repaired
 
 
 def _opt_float(value: Any) -> Optional[float]:

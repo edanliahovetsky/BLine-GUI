@@ -55,3 +55,69 @@ def test_deserialize_rotation_ranged_constraint_counts_event_triggers():
             end_ordinal=2,
         )
     ]
+
+
+def test_deserialize_repairs_overlapping_translation_ranges_from_older_files():
+    data = {
+        "path_elements": [
+            {"type": "translation", "x_meters": 0.0, "y_meters": 0.0},
+            {"type": "translation", "x_meters": 1.0, "y_meters": 0.0},
+            {"type": "translation", "x_meters": 2.0, "y_meters": 0.0},
+        ],
+        "constraints": {
+            "max_velocity_meters_per_sec": [
+                {"value": 2.0, "start_ordinal": 0, "end_ordinal": 0},
+                {"value": 2.0, "start_ordinal": 0, "end_ordinal": 1},
+                {"value": 4.0, "start_ordinal": 2, "end_ordinal": 2},
+            ]
+        },
+    }
+
+    restored = deserialize_path(data)
+
+    assert restored.ranged_constraints == [
+        RangedConstraint(
+            key="max_velocity_meters_per_sec",
+            value=2.0,
+            start_ordinal=1,
+            end_ordinal=1,
+        ),
+        RangedConstraint(
+            key="max_velocity_meters_per_sec",
+            value=2.0,
+            start_ordinal=2,
+            end_ordinal=2,
+        ),
+        RangedConstraint(
+            key="max_velocity_meters_per_sec",
+            value=4.0,
+            start_ordinal=3,
+            end_ordinal=3,
+        ),
+    ]
+
+
+def test_deserialize_drops_fully_covered_overlapping_range_from_older_files():
+    data = {
+        "path_elements": [
+            {"type": "translation", "x_meters": 0.0, "y_meters": 0.0},
+            {"type": "translation", "x_meters": 1.0, "y_meters": 0.0},
+        ],
+        "constraints": {
+            "max_velocity_meters_per_sec": [
+                {"value": 2.0, "start_ordinal": 0, "end_ordinal": 1},
+                {"value": 3.0, "start_ordinal": 0, "end_ordinal": 0},
+            ]
+        },
+    }
+
+    restored = deserialize_path(data)
+
+    assert restored.ranged_constraints == [
+        RangedConstraint(
+            key="max_velocity_meters_per_sec",
+            value=2.0,
+            start_ordinal=1,
+            end_ordinal=2,
+        )
+    ]

@@ -244,6 +244,29 @@ class TestRemoval:
 
         assert len(path.ranged_constraints) == 0
 
+    def test_remove_element_does_not_expand_range_into_disjoint_neighbor(self):
+        """Removing an interior element must not make a disjoint sibling overlap."""
+        t1 = TranslationTarget()
+        t2 = TranslationTarget()
+        t3 = TranslationTarget()
+        rc1 = RangedConstraint(
+            key="max_velocity_meters_per_sec", value=1.0,
+            start_ordinal=1, end_ordinal=1,
+        )
+        rc2 = RangedConstraint(
+            key="max_velocity_meters_per_sec", value=2.0,
+            start_ordinal=2, end_ordinal=3,
+        )
+        old_elements = [t1, t2, t3]
+        path = _make_path(t1, t3, constraints=[rc1, rc2])
+
+        remap_ranged_constraints(path, old_elements)
+
+        assert [(rc.start_ordinal, rc.end_ordinal) for rc in path.ranged_constraints] == [
+            (1, 1),
+            (2, 2),
+        ]
+
 
 # ---------------------------------------------------------------------------
 # Reorder tests
@@ -379,6 +402,29 @@ class TestTypeChange:
         # Constraint was [1,2] -> w1(1), r1(2) -> still [1,2]
         assert rc.start_ordinal == 1
         assert rc.end_ordinal == 2
+
+    def test_type_change_does_not_expand_range_into_disjoint_neighbor(self):
+        """A type change that removes an interior element must preserve disjoint ranges."""
+        t1 = TranslationTarget()
+        t2 = TranslationTarget()
+        t3 = TranslationTarget()
+        rc1 = RangedConstraint(
+            key="max_velocity_meters_per_sec", value=1.0,
+            start_ordinal=1, end_ordinal=1,
+        )
+        rc2 = RangedConstraint(
+            key="max_velocity_meters_per_sec", value=2.0,
+            start_ordinal=2, end_ordinal=3,
+        )
+        old_elements = [t1, t2, t3]
+        path = _make_path(t1, RotationTarget(), t3, constraints=[rc1, rc2])
+
+        remap_ranged_constraints(path, old_elements)
+
+        assert [(rc.start_ordinal, rc.end_ordinal) for rc in path.ranged_constraints] == [
+            (1, 1),
+            (2, 2),
+        ]
 
 
 # ---------------------------------------------------------------------------
