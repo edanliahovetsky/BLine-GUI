@@ -2,7 +2,7 @@
 
 **BLine** is an open-source path generation and tracking suite designed for **holonomic drivetrains** (swerve, mecanum, etc.) made by students for students. It's built around simplicity and performance in time-constrained environments where quick iteration and rapid empirical testing prove advantageous.
 
-📚 **[Documentation](https://edanliahovetsky.github.io/BLine-Docs/)** — full guides, tutorials, and reference.
+📚 **[Documentation](https://bline-docs.pages.dev/)** — full guides, tutorials, and reference.
 
 ☕ **[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** — the BLine Java library.
 
@@ -193,7 +193,7 @@ bline
 
 **Python package installation:** Run `bline` from any terminal. To create a desktop shortcut with the BLine icon, run `bline --create-shortcut`.
 
-For guides on path elements, constraints, the GUI interface, and more, see the **[Documentation](https://edanliahovetsky.github.io/BLine-Docs/)**.
+For guides on path elements, constraints, the GUI interface, and more, see the **[Documentation](https://bline-docs.pages.dev/)**.
 
 ## Development
 
