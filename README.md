@@ -1,12 +1,22 @@
 # BLine-GUI
 
-**BLine** is an open-source path generation and tracking suite designed for **holonomic drivetrains** (swerve, mecanum, etc.) made by students for students. It's built around simplicity and performance in time-constrained environments where quick iteration and rapid empirical testing prove advantageous.
+> **Legacy desktop editor:** BLine-GUI is the original PySide6 desktop editor
+> for BLine. The current editor is **[BLine Web](https://github.com/edanliahovetsky/BLine-Web)**,
+> which runs in the browser and as a desktop app.
 
-📚 **[Documentation](https://bline-docs.pages.dev/)** — full guides, tutorials, and reference.
+**[Open the hosted BLine Web editor](https://bline-web.pages.dev/)** |
+**[BLine Web repo](https://github.com/edanliahovetsky/BLine-Web)** |
+**[Desktop downloads](https://github.com/edanliahovetsky/BLine-Web/releases)** |
+**[Documentation](https://bline-docs.pages.dev/)**
 
-☕ **[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** — the BLine Java library.
+**BLine** is a rapid point-to-point autonomous path planning and tracking
+library for FIRST Robotics Competition. It is built around practical tuning,
+quick iteration, and rapid empirical testing in time-constrained build-season
+environments.
 
-💬 **[Chief Delphi Thread](https://www.chiefdelphi.com/t/introducing-bline-a-new-rapid-polyline-autonomous-path-planning-suite/509778)** — discussion, feedback, and announcements.
+**[BLine-Lib](https://github.com/edanliahovetsky/BLine-Lib)** - Java robot library.
+
+**[Chief Delphi Thread](https://www.chiefdelphi.com/t/introducing-bline-a-new-rapid-polyline-autonomous-path-planning-suite/509778)** - discussion, feedback, and announcements.
 
 ![BLine GUI Demo](assets/readme/gui_demo.gif)
 
